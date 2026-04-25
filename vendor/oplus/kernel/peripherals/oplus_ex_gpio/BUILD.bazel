@@ -1,0 +1,12 @@
+# Stub: oplus_ex_gpio module source not available in this tree
+# Creates empty filegroup target to satisfy Bazel dependency graph
+package(
+    default_visibility = [
+        "//visibility:public",
+    ],
+)
+
+filegroup(
+    name = "oplus_bsp_ex_gpio",
+    srcs = [],
+)
