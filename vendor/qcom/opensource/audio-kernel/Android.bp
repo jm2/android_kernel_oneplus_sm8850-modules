@@ -35,7 +35,7 @@ genrule {
 }
 
 cc_library_headers {
-    name: "qti_audio_kernel_uapi",
+    name: "qti_audio_kernel_uapi_sm8850",
     generated_headers: ["qti_generate_audio_kernel_headers"],
     export_generated_headers: ["qti_generate_audio_kernel_headers"],
     vendor: true,

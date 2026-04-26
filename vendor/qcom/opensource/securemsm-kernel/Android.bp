@@ -86,7 +86,7 @@ cc_library_headers {
 
 
 cc_library_headers {
-    name: "smmu_proxy_uapi_header",
+    name: "smmu_proxy_uapi_header_sm8850",
     vendor_available: true,
     export_include_dirs: ["smmu-proxy/include/uapi/"],
 }

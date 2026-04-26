@@ -56,7 +56,7 @@ genrule {
 }
 
 cc_library_headers {
-    name: "qti_ipa_kernel_headers",
+    name: "qti_ipa_kernel_headers_sm8850",
     generated_headers: ["qti_generate_ipa_kernel_headers"],
     export_generated_headers: ["qti_generate_ipa_kernel_headers"],
     vendor: true,
