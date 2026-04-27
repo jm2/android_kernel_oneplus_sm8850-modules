@@ -44,3 +44,6 @@ modules_install:
 
 clean:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) clean $(KBUILD_OPTIONS)
+
+# vendor/lineage's kernel.mk passes 'modules' explicitly; route to 'all'.
+modules: all

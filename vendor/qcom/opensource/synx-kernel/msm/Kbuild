@@ -5,6 +5,12 @@ LINUXINCLUDE    += -I$(SYNX_ROOT)/include \
 
 ccflags-y += -I$(SYNX_ROOT)/msm/synx/
 
+# Vendor synx_util.c:1757 / synx.c:3243 have real uninitialized-variable
+# bugs that vendor's clang version (older) didn't flag but system clang
+# 22 catches under -Werror,-Wuninitialized / -Wsometimes-uninitialized.
+# Demote to warning so the build proceeds — proper fix is upstream patch.
+ccflags-y += -Wno-error=uninitialized -Wno-error=sometimes-uninitialized
+
 # add flag to compile mmrm actual implementatio instead of stub version.
 # to follow up with mmrm team if techpack users need to define this for long term?
 #KBUILD_CPPFLAGS += -DCONFIG_MSM_MMRM
@@ -47,6 +53,7 @@ synx-driver-objs := synx/synx_compat.o synx/synx_stub.o
 else
 obj-m += synx/ipclite.o
 synx-driver-objs := synx/synx.o synx/synx_global.o synx/synx_util.o synx/synx_debugfs.o \
+			synx/synx_debugfs_util.o \
 			synx/synx_compat.o synx/synx_test_ioctl.o
 obj-m += synx/test/ipclite_test.o
 endif

@@ -14,3 +14,7 @@ modules_install:
 
 clean:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) clean
+
+# vendor/lineage's kernel.mk passes 'modules' explicitly. This wrapper has
+# no %: catch-all, so route 'modules' to 'all'.
+modules: all

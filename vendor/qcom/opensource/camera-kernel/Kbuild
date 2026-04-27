@@ -25,6 +25,11 @@ ccflags-y :=  $(addprefix -I,$(cam_include_dirs))
 ccflags-y += -I$(srctree)/$(src)
 ccflags-y += -I$(srctree)/$(src)/include/uapi/camera/
 
+# Vendor camera-kernel ships several stale -Werror gates that newer clang
+# (22) catches in headers/files that don't matter for runtime correctness.
+# Demote to warnings so the build proceeds; track for upstream cleanup.
+ccflags-y += -Wno-error=unused-function
+
 
 CONFIG_QCOM_CAMERA_DEBUG := y
 ccflags-y += -DCONFIG_QCOM_CAMERA_DEBUG=1

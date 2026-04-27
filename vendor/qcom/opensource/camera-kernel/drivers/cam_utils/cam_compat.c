@@ -9,6 +9,7 @@
 #include <linux/of_address.h>
 #include <linux/slab.h>
 #include <linux/of.h>
+#include <linux/interconnect.h>
 
 #if IS_ENABLED(CONFIG_SPECTRA_SOC_QCOM_SOCINFO)
 #include <soc/qcom/socinfo.h>

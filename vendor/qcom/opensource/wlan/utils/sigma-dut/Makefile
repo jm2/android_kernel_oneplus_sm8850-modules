@@ -102,3 +102,6 @@ $(DESTDIR)$(BINDIR)/%: %
 install: $(addprefix $(DESTDIR)$(BINDIR)/,$(ALL))
 
 -include $(OBJS:%.o=%.d)
+
+# vendor/lineage's kernel.mk passes 'modules' explicitly; route to 'all'.
+modules: all

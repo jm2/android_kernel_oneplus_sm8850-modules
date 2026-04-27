@@ -82,7 +82,7 @@ void cam_soc_bus_client_unregister(void **client);
 
 #else
 
-static const char *cam_soc_bus_path_data_to_str(enum cam_soc_bus_path_data bus_path_data)
+static inline const char *cam_soc_bus_path_data_to_str(enum cam_soc_bus_path_data bus_path_data)
 {
 	return NULL;
 }
@@ -93,7 +93,7 @@ static inline int cam_soc_bus_client_update_request(void *client,
 	return 0;
 }
 
-int cam_soc_bus_client_update_bw(void *client, uint64_t ab, uint64_t ib,
+static inline int cam_soc_bus_client_update_bw(void *client, uint64_t ab, uint64_t ib,
 	enum cam_soc_bus_path_data bus_path_data)
 {
 	return 0;
