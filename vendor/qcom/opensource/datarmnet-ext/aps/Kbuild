@@ -1,5 +1,11 @@
 obj-m += rmnet_aps.o
+# Cross-module includes that vendor's Kleaf injected:
+#   <uapi/linux/rmnet_aps.h> — own include/uapi tree
+#   "rmnet_config.h" — from datarmnet/core
 ccflags-y := -I$(RMNET_CORE_INC_DIR) \
+             -I$(src) \
+             -I$(src)/include \
+             -I$(src)/../../datarmnet/core \
              $(call cc-option,-Wno-misleading-indentation)
 rmnet_aps-y := \
         rmnet_aps_main.o \

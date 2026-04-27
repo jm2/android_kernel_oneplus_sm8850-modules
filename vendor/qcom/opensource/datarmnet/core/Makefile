@@ -39,6 +39,11 @@ KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
 
 KBUILD_OPTIONS := RMNET_CORE_ROOT=$(PWD)
 KBUILD_OPTIONS += MODNAME?=rmnet_core
+# rmnet_core imports rmnet_mem_* from datarmnet-ext/mem/rmnet_mem.ko.
+# Vendor's Kleaf wires this dep via the bzl deps list; under mka kernel
+# we have to point KBUILD_EXTRA_SYMBOLS at the sibling Module.symvers.
+KBUILD_EXTRA_SYMBOLS += $(KERNEL_SRC)/../sm8850-modules/vendor/qcom/opensource/datarmnet-ext/mem/Module.symvers
+export KBUILD_EXTRA_SYMBOLS
 
 all:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) modules $(KBUILD_OPTIONS)

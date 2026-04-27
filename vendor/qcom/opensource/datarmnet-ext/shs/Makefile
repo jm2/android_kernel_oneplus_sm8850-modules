@@ -2,7 +2,11 @@ KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
 
 KBUILD_OPTIONS := RMNET_SHS_ROOT=$(PWD)
 KBUILD_OPTIONS += MODNAME?=rmnet_shs
-KBUILD_EXTRA_SYMBOLS := $(M)/../../$(DATARMNET_CORE_PATH)/Module.symvers
+DATARMNET_CORE_PATH ?= datarmnet/core
+RMNET_CORE_INC_DIR ?= $(abspath $(CURDIR)/../../datarmnet/core)
+KBUILD_OPTIONS += RMNET_CORE_INC_DIR=$(RMNET_CORE_INC_DIR)
+KBUILD_EXTRA_SYMBOLS := $(abspath $(CURDIR)/../../$(DATARMNET_CORE_PATH)/Module.symvers)
+export KBUILD_EXTRA_SYMBOLS
 M ?= $(shell pwd)
 
 all:

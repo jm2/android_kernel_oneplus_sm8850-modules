@@ -1,6 +1,30 @@
 ifneq (, $(filter y, $(CONFIG_ARCH_SUN) $(CONFIG_ARCH_CANOE) $(CONFIG_ARCH_VIENNA) $(CONFIG_ARCH_YUPIK)))
-ccflags-y	+= -DRMNET_LA_PLATFORM
+# Vendor Kbuild defines bare RMNET_LA_PLATFORM but rmnet_ctl.h /
+# wda.h gate on CONFIG_RMNET_LA_PLATFORM. Define both so the header
+# gates match what the source files expect.
+ccflags-y	+= -DRMNET_LA_PLATFORM -DCONFIG_RMNET_LA_PLATFORM
 endif
+
+# Cross-module headers that vendor's Kleaf injected via -I:
+#   <linux/ipa.h> from dataipa/drivers/platform/msm/include
+#   <linux/msm_ipa.h> from dataipa/drivers/platform/msm/include/uapi
+#   "rmnet_mem.h" from datarmnet-ext/mem
+ccflags-y	+= -I$(src)/../../dataipa/drivers/platform/msm/include
+ccflags-y	+= -I$(src)/../../dataipa/drivers/platform/msm/include/uapi
+ccflags-y	+= -I$(src)/../../datarmnet-ext/mem
+
+# Override the relative-path TRACE_INCLUDE_PATH that vendor emits — under
+# our build layout (kernel/oneplus/sm8850 vs sibling kernel/oneplus/
+# sm8850-modules) the relative paths in wda.h / dfc.h don't resolve.
+# Stringification turns this into "/abs/path/wda.h" inside define_trace.h.
+ccflags-y	+= -DRMNET_TRACE_INCLUDE_PATH=$(src)
+
+# Vendor rmnet_vnd.c initializes char[32] arrays from 33-char string
+# literals (counting the NUL). clang 22 caught this under -Werror,
+# -Wunterminated-string-initialization. The intended use treats the
+# array as a non-NUL-terminated buffer; the upstream fix is to add
+# the __nonstring attribute. Demote to warning to unblock build.
+ccflags-y	+= -Wno-error=unterminated-string-initialization
 
 obj-m += rmnet_core.o
 

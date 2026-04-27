@@ -1,5 +1,5 @@
 obj-m += rmnet_wlan.o
-ccflags-y := -I$(RMNET_CORE_INC_DIR) \
+ccflags-y := -I$(RMNET_CORE_INC_DIR) -I$(src) -I$(src)/include \
 	$(call cc-option,-Wno-misleading-indentation)
 rmnet_wlan-y := \
 	rmnet_wlan_main.o \
