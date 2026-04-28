@@ -8,4 +8,8 @@ $(MODULE)-objs := \
 	netlink_handler.o \
 	standby_netlink_deps.o
 
-obj-$(CONFIG_OPLUS_FEATURE_POWER_NETLINK) += $(MODULE).o
+# Lineage source-build: vendor's Makefile sets
+# CONFIG_OPLUS_FEATURE_STANDBY_NETLINK while this Kbuild was gated on
+# CONFIG_OPLUS_FEATURE_POWER_NETLINK. Match them so the module actually
+# builds under our flow.
+obj-$(CONFIG_OPLUS_FEATURE_STANDBY_NETLINK) += $(MODULE).o

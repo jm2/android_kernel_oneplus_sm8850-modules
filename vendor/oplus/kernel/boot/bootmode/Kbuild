@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Provides get_boot_mode, op_is_monitorable_boot
+# (consumed by msm_drm.ko, oplus_chg_v2.ko, cnss2.ko, oplus_bsp_tp_*.ko,
+#  oplus_bsp_synaptics_tcm2.ko, oplus_network_rf_cable_monitor.ko, etc.)
+
+MODULE = oplus_bsp_bootmode
+$(MODULE)-objs := boot_mode.o
+obj-$(CONFIG_OPLUS_FEATURE_BOOTMODE) += $(MODULE).o

@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Provides get_project, get_PCB_Version, get_eng_version,
+# get_Operator_Version, get_Modem_Version, etc. — consumed by msm_drm.ko,
+# oplus_chg_v2.ko, cnss2.ko, oplus_bsp_dfr_*, etc.
+
+MODULE = oplus_bsp_boot_projectinfo
+$(MODULE)-objs := oplus_project.o
+ccflags-y += -DCONFIG_OPLUS_SYSTEM_KERNEL_QCOM
+obj-$(CONFIG_OPLUS_FEATURE_BOOT_PROJECTINFO) += $(MODULE).o

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Bundles the cmdline-parser .c files into oplusboot.ko, since on the
+# vendor-prebuilt-fallback path these are tiny modules that ship together.
+# Provides verified_bootstate, serial_no, md_buffersize (oplusboot.c),
+# plus saupwk, build-variant, cdt_integrity, oplus_bootargs, oplus_ftm_mode,
+# oplus_charger_present helpers consumed by oplus_bsp_bootmode and
+# oplus_bsp_boot_projectinfo.
+
+# Bundle name has to differ from any of its source basenames or kbuild
+# hits a circular dependency on oplusboot.o.
+MODULE = oplus_bsp_cmdline_parser
+$(MODULE)-objs := \
+	oplusboot.o \
+	buildvariant.o \
+	cdt_integrity.o \
+	oplus_bootargs.o \
+	oplus_charger_present.o \
+	oplus_ftm_mode.o \
+	saupwk.o
+obj-$(CONFIG_OPLUS_FEATURE_OPLUSBOOT) += $(MODULE).o
