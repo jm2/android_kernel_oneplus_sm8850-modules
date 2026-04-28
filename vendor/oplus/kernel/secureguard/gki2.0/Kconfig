@@ -6,5 +6,5 @@ config OPLUS_KERNEL_SECURE_FEATURE
 		
 
 #source "arch/arm64/kernel/secureguard/keventupload/Kconfig"
-source "arch/arm64/kernel/secureguard/rootguard/Kconfig"
+source "arch/arm64/kernel/secureguard/rootguard_new/Kconfig"
 

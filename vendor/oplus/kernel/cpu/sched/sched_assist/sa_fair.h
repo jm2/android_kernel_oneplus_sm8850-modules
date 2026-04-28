@@ -7,6 +7,7 @@
 #ifndef _OPLUS_SA_FAIR_H_
 #define _OPLUS_SA_FAIR_H_
 
+extern int global_sched_ddl_enabled;
 extern struct ux_sched_cputopo ux_sched_cputopo;
 
 bool should_ux_task_skip_cpu(struct task_struct *task, unsigned int dst_cpu);

@@ -347,7 +347,7 @@ error:
 
 #ifdef OPLUS_FEATURE_DISPLAY
 	if (!rc) {
-		if (oplus_display_ops.panel_set_backlight_post) {
+		if (oplus_display_ops.panel_set_backlight_post && oplus_display_ops.get_aod_state && !oplus_display_ops.get_aod_state()) {
 			oplus_display_ops.panel_set_backlight_post(panel, bl_temp);
 		}
 	}
@@ -958,11 +958,8 @@ static int dsi_display_read_status(struct dsi_display_ctrl *ctrl,
 		return 0;
 
 #ifdef OPLUS_FEATURE_DISPLAY
-	if (oplus_display_ops.display_read_status) {
-		rc = oplus_display_ops.display_read_status(panel);
-		if (rc) {
-			return rc;
-		}
+	if (oplus_display_ops.display_read_status_pre) {
+		oplus_display_ops.display_read_status_pre(panel);
 	}
 #endif /* OPLUS_FEATURE_DISPLAY */
 
@@ -1025,6 +1022,12 @@ static int dsi_display_read_status(struct dsi_display_ctrl *ctrl,
 	if (iris_is_chip_supported())
 		iris_check_reg_read(display->panel);
 #endif
+
+#ifdef OPLUS_FEATURE_DISPLAY
+	if (oplus_display_ops.display_read_status_post) {
+		oplus_display_ops.display_read_status_post(panel);
+	}
+#endif /* OPLUS_FEATURE_DISPLAY */
 
 	return rc;
 }

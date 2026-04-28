@@ -35,6 +35,12 @@ obj-$(CONFIG_OPLUS_VIRTUAL_SENSOR) += virtual_sensor.o
 ifeq ($(CONFIG_OPLUS_FEATURE_LAY_DETECT), m)
 subdir-ccflags-y += -D CONFIG_OPLUS_FEATURE_LAY_DETECT
 endif
+ifeq ($(CONFIG_OPLUS_FEATURE_FLAT_DETECT), m)
+subdir-ccflags-y += -D CONFIG_OPLUS_FEATURE_FLAT_DETECT
+endif
+ifeq ($(CONFIG_OPLUS_FEATURE_CHOP_DETECT), m)
+subdir-ccflags-y += -D CONFIG_OPLUS_FEATURE_CHOP_DETECT
+endif
 ifeq ($(CONFIG_OPLUS_FEATURE_PALM_DETECT), m)
 subdir-ccflags-y += -D CONFIG_OPLUS_FEATURE_PALM_DETECT
 endif

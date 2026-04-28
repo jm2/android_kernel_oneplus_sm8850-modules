@@ -1599,7 +1599,7 @@ int oplus_ofp_lhbm_ae174_pressed_gamma_update(void *dsi_panel, unsigned int bl_l
 	unsigned int lcm_cmd_count = 0;
 	struct dsi_panel *panel = dsi_panel;
 	struct dsi_cmd_desc *cmds = NULL;
-	struct LCM_setting_table lhbm_on_cmd[6];
+	struct LCM_setting_table lhbm_on_cmd[10];
 	unsigned int r_fpr_ratio = 11234;
 	unsigned int g_fpr_ratio = 11624;
 	unsigned int b_fpr_ratio = 11394;
@@ -1607,6 +1607,7 @@ int oplus_ofp_lhbm_ae174_pressed_gamma_update(void *dsi_panel, unsigned int bl_l
 	unsigned int g_regs = 0;
 	unsigned int b_regs = 0;
 	struct panel_ae174_gamma *ae174_gamma = get_panel_ae174_gamma();
+	unsigned int refresh_rate = 0;
 
 	OFP_DEBUG("start\n");
 
@@ -1631,15 +1632,17 @@ int oplus_ofp_lhbm_ae174_pressed_gamma_update(void *dsi_panel, unsigned int bl_l
 	}
 
 	if (!entering_lhbm) {
-		if (oplus_ofp_get_hbm_state()) {
-			OFP_ERR("should not update lhbm gamma if hbm state is false\n");
+		if (!oplus_ofp_get_hbm_state()) {
+			OFP_DEBUG("should not update lhbm gamma if hbm state is false\n");
 			return 0;
 		}
 	}
 
+	refresh_rate = panel->cur_mode->timing.refresh_rate;
+	bl_level = panel->bl_config.bl_level;
 	for (i = 0; i < sizeof(lhbm_fpr_ratio) / sizeof(lhbm_fpr_ratio[0]); i++) {
 		if (bl_level >= lhbm_fpr_ratio[i].min &&
-			bl_level < lhbm_fpr_ratio[i].max) {
+			bl_level <= lhbm_fpr_ratio[i].max) {
 			r_fpr_ratio = lhbm_fpr_ratio[i].r_ratio;
 			g_fpr_ratio = lhbm_fpr_ratio[i].g_ratio;
 			b_fpr_ratio = lhbm_fpr_ratio[i].b_ratio;
@@ -1653,7 +1656,7 @@ int oplus_ofp_lhbm_ae174_pressed_gamma_update(void *dsi_panel, unsigned int bl_l
 	cmds = panel->cur_mode->priv_info->cmd_sets[DSI_CMD_LHBM_PRESSED_ICON_ON].cmds;
 	lcm_cmd_count = panel->cur_mode->priv_info->cmd_sets[DSI_CMD_LHBM_PRESSED_ICON_ON].count;
 
-	if (lcm_cmd_count > 6 || lcm_cmd_count < 1) {
+	if (lcm_cmd_count > 10 || lcm_cmd_count < 1) {
 		OFP_ERR("lhbm gamma cmd invalid\n");
 		return rc;
 	}
@@ -1662,16 +1665,32 @@ int oplus_ofp_lhbm_ae174_pressed_gamma_update(void *dsi_panel, unsigned int bl_l
 		lhbm_on_cmd[i].count = cmds[i].msg.tx_len;
 		lhbm_on_cmd[i].para_list = (u8 *)cmds[i].msg.tx_buf;
 	}
-	lhbm_on_cmd[4].para_list[1] = r_regs >> 8;
-	lhbm_on_cmd[4].para_list[2] = r_regs & 0xFF;
-	lhbm_on_cmd[4].para_list[3] = g_regs >> 8;
-	lhbm_on_cmd[4].para_list[4] = g_regs & 0xFF;
-	lhbm_on_cmd[4].para_list[5] = b_regs >> 8;
-	lhbm_on_cmd[4].para_list[6] = b_regs & 0xFF;
-	OFP_INFO("l_r_gamma %d l_g_gamma %d l_b_gamma %d, r_regs=[%02X %02X] g_regs=[%02X %02X] b_regs=[%02X %02X]  bl_level %d \n",
+
+	lhbm_on_cmd[0].para_list[1] = bl_level >> 8;
+	lhbm_on_cmd[0].para_list[2] = bl_level & 0xFF;
+	lhbm_on_cmd[5].para_list[1] = r_regs >> 8;
+	lhbm_on_cmd[5].para_list[2] = r_regs & 0xFF;
+	lhbm_on_cmd[5].para_list[3] = g_regs >> 8;
+	lhbm_on_cmd[5].para_list[4] = g_regs & 0xFF;
+	lhbm_on_cmd[5].para_list[5] = b_regs >> 8;
+	lhbm_on_cmd[5].para_list[6] = b_regs & 0xFF;
+	if (refresh_rate == 60) {
+		lhbm_on_cmd[8].para_list[1] = 0x04;
+		cmds[9].post_wait_ms = 16;
+	} else if (refresh_rate == 90) {
+		lhbm_on_cmd[8].para_list[1] = 0x01;
+		cmds[9].post_wait_ms = 11;
+	} else if (refresh_rate == 144) {
+		lhbm_on_cmd[8].para_list[1] = 0x02;
+		cmds[9].post_wait_ms = 6;
+	} else {
+		lhbm_on_cmd[8].para_list[1] = 0x00;
+		cmds[9].post_wait_ms = 8;
+	}
+	OFP_INFO("l_r_gamma %d l_g_gamma %d l_b_gamma %d, r_regs=[%02X %02X] g_regs=[%02X %02X] b_regs=[%02X %02X] fps:%d bl_level %d\n",
 		ae174_gamma->l_r_gamma,  ae174_gamma->l_g_gamma,  ae174_gamma->l_b_gamma,
-		lhbm_on_cmd[4].para_list[1], lhbm_on_cmd[4].para_list[2], lhbm_on_cmd[4].para_list[3],
-		lhbm_on_cmd[4].para_list[4], lhbm_on_cmd[4].para_list[5], lhbm_on_cmd[4].para_list[6], bl_level);
+		lhbm_on_cmd[5].para_list[1], lhbm_on_cmd[5].para_list[2], lhbm_on_cmd[5].para_list[3],
+		lhbm_on_cmd[5].para_list[4], lhbm_on_cmd[5].para_list[5], lhbm_on_cmd[5].para_list[6], refresh_rate, bl_level);
 
 	OFP_DEBUG("end\n");
 
@@ -2107,7 +2126,7 @@ static int oplus_ofp_set_panel_hbm(void *sde_connector, bool hbm_en)
 			if (rc) {
 				OFP_ERR("[%s] failed to update vdc cmds, rc=%d\n", display->name, rc);
 			}
-			rc = oplus_ofp_lhbm_ae174_pressed_gamma_update(display->panel, oplus_last_backlight, false);
+			rc = oplus_ofp_lhbm_ae174_pressed_gamma_update(display->panel, oplus_last_backlight, true);
 			if (rc) {
 				OFP_ERR("[%s] failed to update gamma cmds, rc=%d\n", display->name, rc);
 			}
@@ -3000,6 +3019,9 @@ bool oplus_ofp_backlight_filter(void *dsi_panel, unsigned int bl_level)
 			need_filter_backlight = true;
 			} else if (p_oplus_ofp_params->need_to_update_lhbm_pressed_icon_gamma && (bl_level > OPLUS_OFP_900NIT_DBV_LEVEL)) {
 				OFP_INFO("hbm state is true and backlight lvl is greater than OPLUS_OFP_900NIT_DBV_LEVEL, filter backlight %u setting\n", bl_level);
+				need_filter_backlight = true;
+			} else if (panel->oplus_panel.gamma_ae174_compensation_support && oplus_ofp_get_hbm_state()) {
+				OFP_INFO("hbm state is true, filter backlight %u setting\n\n", bl_level);
 				need_filter_backlight = true;
 			}
 		}
@@ -3965,10 +3987,12 @@ int oplus_ofp_aod_off_backlight_recovery(void *sde_encoder_virt)
 	if (last_aod_layer_status && !new_aod_layer_status) {
 		OFP_INFO("recovery backlight level = %d after aod layer disappear\n", display->panel->bl_config.bl_level);
 		mutex_lock(&display->panel->panel_lock);
+		display->panel->oplus_panel.aod_backlight_async = true;
 		rc = dsi_panel_set_backlight(display->panel, display->panel->bl_config.bl_level);
 		if (rc) {
 			OFP_ERR("unable to set backlight\n");
 		}
+		display->panel->oplus_panel.aod_backlight_async = false;
 		mutex_unlock(&display->panel->panel_lock);
 	}
 

@@ -46,6 +46,8 @@ enum virtual_sensor_handle {
     camera_protect,
     free_fall,
     pickup_detect,
+    flat_detect,
+    chop_detect,
     fp_display,
     lux_aod,
     pedo_minute,

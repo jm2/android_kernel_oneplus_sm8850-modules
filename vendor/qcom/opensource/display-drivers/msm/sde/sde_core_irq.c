@@ -29,6 +29,11 @@ static void sde_core_irq_callback_handler(void *arg, int irq_idx)
 	int enable_counts = 0;
 
 	pr_debug("irq_idx=%d\n", irq_idx);
+#ifdef OPLUS_FEATURE_DISPLAY
+	if (get_eng_version() == FACTORY || get_eng_version() == AGING || get_eng_version() == HIGH_TEMP_AGING) {
+		SDE_EVT32_IRQ(irq_idx);
+	}
+#endif
 
 	spin_lock_irqsave(&sde_kms->irq_obj.cb_lock, irq_flags);
 	if (list_empty(&irq_obj->irq_cb_tbl[irq_idx])) {

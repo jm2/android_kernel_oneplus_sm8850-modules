@@ -4798,6 +4798,7 @@ lim_fill_session_params(struct mac_context *mac_ctx,
 		req->req_fail_status_code = req_fail_status_code;
 		return QDF_STATUS_E_FAILURE;
 	}
+	lim_set_amsdu_for_2g_oui(mac_ctx, session, bss_desc);
 
 	lim_copy_ml_partner_info_to_session(session, req);
 

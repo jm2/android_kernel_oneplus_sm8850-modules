@@ -56,6 +56,7 @@ int m_less800nit_ds_list_count = 0;
 u32 m_ds1x0_real = 0, m_ds1x3_real = 0, m_ds2x0_real = 0;
 u32 m_ds21x0_real = 0, m_ds21x3_real = 0;
 int apuir_enable = 0;
+bool apuir_sdc_band = false;
 
 void oplus_apuir_setenable(int enable) {
 	apuir_enable = enable;
@@ -221,6 +222,40 @@ static void exchangeregs(int ds, u8* apuirregs, int index0, int index1, int inde
 	apuirregs[index3] = temp4;
 }
 
+/*Enter the ds value corresponding to the brightening ratio into the BAND around 3515 to make it effective.*/
+static void exchangeregs_sdc(int ds, u8* apuirregs, int index0, int index1, int index2) {
+	int temp1 = 0, temp2 = 0, temp3 = 0;
+	int dsh = 0, dsl = 0;
+
+	if (!apuirregs) {
+		APUIR_ERR("apuirregs is NULL\n");
+		return;
+	}
+
+	if (index0 < 0 || index0 >= APUIR_DS_READ_LENGTH ||
+		index1 < 0 || index1 >= APUIR_DS_READ_LENGTH ||
+		index2 < 0 || index2 >= APUIR_DS_READ_LENGTH) {
+		APUIR_ERR("Invalid index: %d, %d, %d (max: %d)\n",
+			 index0, index1, index2, APUIR_DS_READ_LENGTH - 1);
+		return;
+	}
+
+	dsh = (ds >> 8) & 0xFF;
+	dsl = ds & 0xFF;
+
+	temp1 = apuirregs[index0];
+	temp2 = apuirregs[index1];
+	temp3 = apuirregs[index2];
+
+	temp1 = (dsh << 4) | (dsh & 0x0F); /*BAND10/12[11:8] | BAND9/11[11:8]*/
+	temp2 = dsl; /*BAND9/11[7:0]*/
+	temp3 = dsl; /*BAND10/12[7:0]*/
+
+	apuirregs[index0] = temp1;
+	apuirregs[index1] = temp2;
+	apuirregs[index2] = temp3;
+}
+
 void oplus_apuir_set_up800nit_ds_list(int count, u32* list) {
 	m_up800nit_ds_list_count = count;
 	if (m_up800nit_ds_list_count != 3 || !list) {
@@ -278,6 +313,7 @@ void oplus_apuir_set_cmd(void *dsi_display, unsigned int ds)
 	/* int index0 = 14, index1 = 17, index2 = 16, index3 = 18; */
 	int index4 = 37, index5 = 40, index6 = 39, index7 = 41;
 	/* int index4 = 11, index5 = 14, index6 = 13, index7 = 15; */
+	int index8 = 40, index9 = 41, index10 = 47, index11 = 48, index12 = 49, index13 = 50;
 	/* ds */
 	u32 ds_min = m_ds1x0_real, ds_max = m_ds2x0_real;
 	/* ds2 */
@@ -359,7 +395,11 @@ void oplus_apuir_set_cmd(void *dsi_display, unsigned int ds)
 			APUIR_DEBUG("apuirdriver aplds > 0 ds2 = %d 0x%x ratio = %d / 100000\n", ds2, ds2, ratio);
 		}
 		mAPuirType = DSI_CMD_APUIR_ON;
-		exchangeregs(ds2, apuirregs, index4, index5, index6, index7);
+		if (apuir_sdc_band) {
+			exchangeregs_sdc(ds2, apuirregs, index8, index9, index10);
+		} else {
+			exchangeregs(ds2, apuirregs, index4, index5, index6, index7);
+		}
 	} else if (off_framecount < APUIR_OFF_FRAME_COUNT - 1) {
 		if (oprds > m_ds1x3_real) {
 			ds2 = ds2_max;
@@ -369,13 +409,21 @@ void oplus_apuir_set_cmd(void *dsi_display, unsigned int ds)
 			ds2 = ratio * (ds2_max - ds2_min) / 30000 + ds2_min;
 			APUIR_DEBUG("apuirdriver aplds == 0 ds2 = %d 0x%x ratio = %d / 100000\n", ds2, ds2, ratio);
 		}
-		exchangeregs(ds2, apuirregs, index4, index5, index6, index7);
+		if (apuir_sdc_band) {
+			exchangeregs_sdc(ds2, apuirregs, index8, index9, index10);
+		} else {
+			exchangeregs(ds2, apuirregs, index4, index5, index6, index7);
+		}
 	}
 
 	if (aplds == 0) {
 		off_framecount++;
 		if (off_framecount >= 1 && off_framecount < APUIR_OFF_FRAME_COUNT) {
-			exchangeregs(oprds, apuirregs, index0, index1, index2, index3);
+			if (apuir_sdc_band) {
+				exchangeregs_sdc(oprds, apuirregs, index11, index12, index13);
+			} else {
+				exchangeregs(oprds, apuirregs, index0, index1, index2, index3);
+			}
 			mAPuirType = DSI_CMD_APUIR_MIDDLE_OFF;
 			apuirregs[modepose] = oprmode;
 			apuirregs[apl_lpose] = 0xFF;
@@ -389,7 +437,11 @@ void oplus_apuir_set_cmd(void *dsi_display, unsigned int ds)
 		apuirregs[modepose] = aplmode;
 		apuirregs[apl_lpose] = 0x3F;
 		apuirregs[apl_hpose] = 0x33;
-		exchangeregs(aplds, apuirregs, index0, index1, index2, index3);
+		if (apuir_sdc_band) {
+			exchangeregs_sdc(aplds, apuirregs, index11, index12, index13);
+		} else {
+			exchangeregs(aplds, apuirregs, index0, index1, index2, index3);
+		}
 	}
 
 	APUIR_INFO("apuirdriver replace off_framecount %d DSI_CMD_APUIR_ON %d DSI_CMD_APUIR_OFF %d mAPuirType = %d seed_mode = %d regs len=%d\n",

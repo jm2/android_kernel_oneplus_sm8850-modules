@@ -25,6 +25,10 @@
 extern int dynamic_osc_clock;
 bool oplus_enhance_mipi_strength = false;
 bool apollo_backlight_enable = false;
+#ifdef OPLUS_FEATURE_AP_UIR_DIMMING
+extern bool apuir_sdc_band;
+#endif
+
 
 static int oplus_panel_parse_common_config(struct dsi_panel *panel)
 {
@@ -344,6 +348,11 @@ int oplus_panel_parse_features_config(struct dsi_panel *panel)
 			"oplus,dsi-white-point-compensation-enabled");
 	OPLUS_DSI_INFO("oplus,dsi-white-point-compensation-enabled: %s\n", panel->oplus_panel.white_point_compensation_enabled ? "true" : "false");
 
+	panel->oplus_panel.interval_time_fps_to_esd_flag = utils->read_bool(utils->data,
+			"oplus,interval-time-switch-fps-to-esd");
+	OPLUS_DSI_INFO("oplus,interval-time-switch-fps-to-esd: %s\n",
+			panel->oplus_panel.interval_time_fps_to_esd_flag ? "true" : "false");
+
 	return 0;
 }
 
@@ -412,6 +421,12 @@ void oplus_panel_parse_apuir_ds_list(struct dsi_panel *panel) {
 	u32 *up800nit_ds_list = NULL;
 	int less800nit_ds_count = 0;
 	u32 *less800nit_ds_list = NULL;
+
+	apuir_sdc_band = of_property_read_bool(utils->data,
+		"oplus,apuir-sdc-band");
+	OPLUS_DSI_INFO("oplus,apuir-sdc-band: %s\n",
+		apuir_sdc_band ? "true" : "false");
+
 
 	/* get up800nit_ds_list */
 	up800nit_ds_count = utils->count_u32_elems(utils->data,

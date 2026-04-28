@@ -332,6 +332,7 @@ int oplus_display_set_power(struct drm_connector *connector,
 			oplus_ofp_power_mode_handle(display, power_mode);
 		}
 #endif /* OPLUS_FEATURE_DISPLAY_ONSCREENFINGERPRINT */
+		oplus_panel_event_data_notifier_trigger(display->panel, DRM_PANEL_EVENT_BLANK_LP, power_mode, true);
 		break;
 
 	case SDE_MODE_DPMS_ON:
@@ -2039,6 +2040,7 @@ int oplus_dsi_panel_parse_lut(struct dsi_panel *panel)
 	utils = &panel->utils;
 	panel->oplus_panel.lut_enabled = utils->read_bool(utils->data, "oplus,dsi-lut-set-enabled");
 	OPLUS_DSI_INFO("oplus,dsi-lut-set-enabled: %s", panel->oplus_panel.lut_enabled ? "true" : "false");
+	panel->oplus_panel.lut_refresh_rate = 120;
 
 	return 0;
 }
@@ -2051,7 +2053,7 @@ void oplus_panel_timing_switch_lut_set(struct dsi_panel *panel)
 
 	if (panel->oplus_panel.lut_enabled == true) {
 		refresh_rate = panel->cur_mode->timing.refresh_rate;
-		last_refresh_rate = panel->oplus_panel.last_refresh_rate;
+		last_refresh_rate = panel->oplus_panel.lut_refresh_rate;
 		OPLUS_DSI_INFO("refresh_rate %d last_refresh_rate %d\n", refresh_rate, last_refresh_rate);
 		if (last_refresh_rate == 120 && refresh_rate == 60) {
 			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_FPS_SWITCH_120_TO_60, false);
@@ -2081,6 +2083,18 @@ void oplus_panel_timing_switch_lut_set(struct dsi_panel *panel)
 			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_FPS_SWITCH_165_TO_120, false);
 		} else if (last_refresh_rate == 165 && refresh_rate == 60) {
 			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_FPS_SWITCH_165_TO_60, false);
+		} else if (last_refresh_rate == 165 && refresh_rate == 90) {
+			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_FPS_SWITCH_165_TO_90, false);
+		} else if (last_refresh_rate == 165 && refresh_rate == 144) {
+			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_FPS_SWITCH_165_TO_144, false);
+		} else if (last_refresh_rate == 60 && refresh_rate == 165) {
+			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_FPS_SWITCH_60_TO_165, false);
+		} else if (last_refresh_rate == 90 && refresh_rate == 165) {
+			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_FPS_SWITCH_90_TO_165, false);
+		} else if (last_refresh_rate == 120 && refresh_rate == 165) {
+			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_FPS_SWITCH_120_TO_165, false);
+		} else if (last_refresh_rate == 144 && refresh_rate == 165) {
+			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_FPS_SWITCH_144_TO_165, false);
 		} else {
 			OPLUS_DSI_INFO("no associated LUT SEL\n");
 		}
@@ -2089,6 +2103,12 @@ void oplus_panel_timing_switch_lut_set(struct dsi_panel *panel)
 		}
 	}
 
+	return;
+}
+
+void oplus_panel_timing_switch_lut_post(struct dsi_panel *panel)
+{
+	panel->oplus_panel.lut_refresh_rate = panel->cur_mode->timing.refresh_rate;
 	return;
 }
 
@@ -2102,6 +2122,16 @@ void oplus_panel_timing_switch_wait_te(struct dsi_panel *panel)
 	if (panel->oplus_panel.wait_te_config & BIT(1)) {
 		if (panel->cur_mode->timing.refresh_rate == 90)
 			oplus_need_to_sync_te(panel);
+	}
+	if (panel->oplus_panel.wait_te_config & BIT(2)) {
+		if (panel->oplus_panel.lut_refresh_rate == 165) {
+			if(panel->cur_mode->timing.refresh_rate == 60) {
+				usleep_range(6000, 6100);
+			} else {
+				usleep_range(3000, 3100);
+			}
+			OPLUS_DSI_INFO("timing_switch cmd after sending there will be a delay\n");
+		}
 	}
 
 	return;
@@ -2191,7 +2221,7 @@ int oplus_panel_ae174_gamma_compensation(void *dsi_display)
 		}
 
 		/* read apl gamma */
-		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_GAMMA_COMPENSATION, false);
+		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_GAMMA_COMPENSATION_PAGE3, false);
 		if (rc) {
 			OPLUS_DSI_ERR("[%s] failed to send DSI_CMD_GAMMA_COMPENSATION cmds, rc=%d\n", display->name, rc);
 			return rc;

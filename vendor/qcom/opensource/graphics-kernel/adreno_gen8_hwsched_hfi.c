@@ -539,6 +539,9 @@ static bool log_gpu_fault(struct adreno_device *adreno_dev)
 			gen8_hwsched_lookup_key_value(adreno_dev, PAYLOAD_FAULT_REGS,
 				KEY_CP_DDEBV_SW_FAULT));
 		break;
+	case GMU_UCHE_OOB_ACCESS:
+		dev_crit_ratelimited(gmu_pdev_dev, "UCHE: Out of bounds access\n");
+		break;
 	case GMU_CP_UNKNOWN_ERROR:
 		fallthrough;
 	default:

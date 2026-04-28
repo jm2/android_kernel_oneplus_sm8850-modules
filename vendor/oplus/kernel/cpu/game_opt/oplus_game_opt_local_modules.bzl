@@ -10,11 +10,13 @@ def define_oplus_game_opt_local_modules():
     if bazel_support_platform == "qcom" :
         ddk_config = "//soc-repo:{}_config".format(kernel_build_variant)
         copts = []
+        ko_deps = ["//soc-repo:{}/kernel/sched/walt/sched-walt".format(kernel_build_variant)]
     else :
         ddk_config = None
         copts = [
         "-DCONFIG_OPLUS_FEATURE_GEAS",
         ]
+        ko_deps = []
 
     define_oplus_ddk_module(
         name = "oplus_bsp_game_opt",
@@ -51,7 +53,7 @@ def define_oplus_game_opt_local_modules():
         includes = ["."],
         config = ddk_config,
         copts = copts,
-        ko_deps = [],
+        ko_deps = ko_deps,
         header_deps = ["//vendor/oplus/kernel/cpu:config_headers"],
         local_defines = [],
     )

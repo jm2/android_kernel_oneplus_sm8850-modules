@@ -596,8 +596,16 @@ static void __nocfi get_page_from_uxmempool(void *data, gfp_t gfp_mask, int orde
 			if (!page_count(page)) {
 				/* clear __GFP_DIRECT_RECLAIM because preempt is disabled in vh */
 				prep_new_page_dup(page, order, gfp_mask & ~(__GFP_DIRECT_RECLAIM), ALLOC_WMARK_LOW);
-			} else if (order && (gfp_mask & __GFP_COMP))
-				prep_compound_page_dup(page, order);
+			} else {
+				if (gfp_mask & __GFP_SKIP_KASAN) {
+					int i;
+					for (i = 0; i != 1 << order; ++i)
+						page_kasan_tag_reset(page + i);
+				}
+
+				if (order && (gfp_mask & __GFP_COMP))
+					prep_compound_page_dup(page, order);
+			}
 		}
 	}
 	*p_page = page;
@@ -794,14 +802,6 @@ static int __init uxmem_opt_init(void)
 	int ret = 0;
 
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_OSVELTE)
-	struct config_ezreclaimd *config_ezr;
-
-	config_ezr = oplus_read_mm_config(module_name_ezreclaimd);
-	if (config_ezr && config_ezr->enable) {
-		pr_info("uxmem is disabled by ezreclaimd\n");
-		return 0;
-	}
-
 	struct config_oplus_bsp_uxmem_opt *config;
 
 	config = oplus_read_mm_config(module_name_uxmem_opt);

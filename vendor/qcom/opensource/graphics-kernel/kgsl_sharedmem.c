@@ -1265,11 +1265,16 @@ static void kgsl_memdesc_pagelist_cleanup(struct kgsl_memdesc *memdesc)
 
 static void _kgsl_free_pages(struct kgsl_memdesc *memdesc)
 {
-	int i;
+	u32 i, n = 1;
 
-	for (i = 0; i < memdesc->page_count; i++)
-		if (memdesc->pages[i])
+	for (i = 0; i < memdesc->page_count; i += n) {
+		n = 1;
+
+		if (memdesc->pages[i]) {
+			n = 1 << compound_order(memdesc->pages[i]);
 			put_page(memdesc->pages[i]);
+		}
+	}
 
 	memdesc->page_count = 0;
 	kvfree(memdesc->pages);

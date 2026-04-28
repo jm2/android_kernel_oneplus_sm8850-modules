@@ -195,7 +195,7 @@ config OPLUS_FEATURE_CEILING_FREE
 
 config OPLUS_FEATURE_SCHED_DDL
 	bool "sched deadline"
-	default n
+	default y
 	help
 		normal cfs tasks worst sched latency optimization
 

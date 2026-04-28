@@ -1099,6 +1099,13 @@ void oplus_panel_update_backlight(struct dsi_panel *panel,
 
 	oplus_apollo_async_bl_frame_delay(panel);
 
+	if ((is_project(24831) || is_project(24863))
+			&& panel->oplus_panel.pwm_params.pwm_switch_state == PWM_SWITCH_MODE2
+			&& ((bl_lvl >= 17) && (bl_lvl < 175))) {
+		OPLUS_DSI_ERR("backlight=%d, Full brightness PWM, backlight 17 ~ 175 is prohibited\n", bl_lvl);
+		bl_lvl = 175;
+	}
+
 	/* will inverted display brightness value */
 	if (panel->bl_config.bl_inverted_dbv)
 		inverted_dbv_bl_lvl = (((bl_lvl & 0xff) << 8) | (bl_lvl >> 8));
@@ -1373,7 +1380,7 @@ int oplus_ae174_apl_gamma_update(struct dsi_display *display, unsigned int bl_le
 	int i = 0;
 	unsigned int lcm_cmd_count = 0;
 	struct dsi_cmd_desc *cmds = NULL;
-	struct LCM_setting_table exit_hbm_cmd[20];
+	struct LCM_setting_table exit_hbm_cmd[18];
 	struct dsi_panel *panel = display->panel;
 	struct panel_ae174_gamma *ae174_gamma = get_panel_ae174_gamma();
 
@@ -1395,7 +1402,7 @@ int oplus_ae174_apl_gamma_update(struct dsi_display *display, unsigned int bl_le
 	if (panel->cur_mode->priv_info->cmd_sets[DSI_CMD_EXIT_HBM_MAX].count) {
 		cmds = panel->cur_mode->priv_info->cmd_sets[DSI_CMD_EXIT_HBM_MAX].cmds;
 		lcm_cmd_count = panel->cur_mode->priv_info->cmd_sets[DSI_CMD_EXIT_HBM_MAX].count;
-		if (lcm_cmd_count > 20 || lcm_cmd_count < 1) {
+		if (lcm_cmd_count > 18 || lcm_cmd_count < 1) {
 			OPLUS_DSI_ERR("exit_hbm_cmd cmd invalid\n");
 			return  -EINVAL;
 		}
@@ -1405,16 +1412,16 @@ int oplus_ae174_apl_gamma_update(struct dsi_display *display, unsigned int bl_le
 		}
 		exit_hbm_cmd[0].para_list[1] = bl_level >> 8;
 		exit_hbm_cmd[0].para_list[2] = bl_level & 0xFF;
-		exit_hbm_cmd[6].para_list[1] = ae174_gamma->a_r_gamma >> 8;
-		exit_hbm_cmd[6].para_list[2] = ae174_gamma->a_r_gamma & 0xFF;
-		exit_hbm_cmd[8].para_list[1] = ae174_gamma->a_g_gamma >> 8;
-		exit_hbm_cmd[8].para_list[2] = ae174_gamma->a_g_gamma & 0xFF;
-		exit_hbm_cmd[10].para_list[1] = ae174_gamma->a_b_gamma >> 8;
-		exit_hbm_cmd[10].para_list[2] = ae174_gamma->a_b_gamma & 0xFF;
-		exit_hbm_cmd[19].para_list[1] = ae174_gamma->elvss_reg;
+		exit_hbm_cmd[4].para_list[1] = ae174_gamma->a_r_gamma >> 8;
+		exit_hbm_cmd[4].para_list[2] = ae174_gamma->a_r_gamma & 0xFF;
+		exit_hbm_cmd[6].para_list[1] = ae174_gamma->a_g_gamma >> 8;
+		exit_hbm_cmd[6].para_list[2] = ae174_gamma->a_g_gamma & 0xFF;
+		exit_hbm_cmd[8].para_list[1] = ae174_gamma->a_b_gamma >> 8;
+		exit_hbm_cmd[8].para_list[2] = ae174_gamma->a_b_gamma & 0xFF;
+		exit_hbm_cmd[17].para_list[1] = ae174_gamma->elvss_reg;
 		OPLUS_DSI_INFO("r_regs=[%02X %02X] g_regs=[%02X %02X] b_regs=[%02X %02X]  bl_level %d \n",
-			exit_hbm_cmd[6].para_list[1], exit_hbm_cmd[6].para_list[2], exit_hbm_cmd[8].para_list[1],
-			exit_hbm_cmd[8].para_list[2], exit_hbm_cmd[10].para_list[1], exit_hbm_cmd[10].para_list[2], bl_level);
+			exit_hbm_cmd[4].para_list[1], exit_hbm_cmd[4].para_list[2], exit_hbm_cmd[6].para_list[1],
+			exit_hbm_cmd[6].para_list[2], exit_hbm_cmd[8].para_list[1], exit_hbm_cmd[8].para_list[2], bl_level);
 	}
 
 	return rc;

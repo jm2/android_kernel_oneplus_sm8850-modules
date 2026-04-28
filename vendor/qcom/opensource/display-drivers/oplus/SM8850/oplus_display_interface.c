@@ -37,6 +37,10 @@
 #include "oplus_apuirdim.h"
 #endif
 
+#ifdef OPLUS_FEATURE_DISPLAY_ONSCREENFINGERPRINT
+#include "oplus_onscreenfingerprint.h"
+#endif /* OPLUS_FEATURE_DISPLAY_ONSCREENFINGERPRINT */
+
 extern bool is_lhbm_panel;
 extern int lcd_closebl_flag;
 extern const char *cmd_set_prop_map[];
@@ -265,6 +269,7 @@ int oplus_panel_enable_post(struct dsi_panel *panel)
 
 	panel->oplus_panel.need_power_on_backlight = true;
 	panel->power_mode = SDE_MODE_DPMS_ON;
+	panel->oplus_panel.lut_refresh_rate = panel->cur_mode->timing.refresh_rate;
 
 	return rc;
 }
@@ -282,8 +287,10 @@ void oplus_panel_switch_pre(struct dsi_panel *panel)
 void oplus_panel_switch_post(struct dsi_panel *panel)
 {
 	/* pwm switch due to timming switch */
+	panel->oplus_panel.switch_fps_to_esd_timestamp = ktime_get();
 	oplus_panel_pwm_switch_timing_switch(panel);
 	oplus_panel_timing_switch_wait_te(panel);
+	oplus_panel_timing_switch_lut_post(panel);
 
 	return;
 }
@@ -343,7 +350,7 @@ void oplus_encoder_kickoff_post(struct drm_encoder *drm_enc, struct sde_encoder_
 	return;
 }
 
-int oplus_display_read_status(struct dsi_panel *panel)
+int oplus_display_read_status_pre(struct dsi_panel *panel)
 {
 	int rc = 0;
 
@@ -352,6 +359,19 @@ int oplus_display_read_status(struct dsi_panel *panel)
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_ESD_SWITCH_PAGE, false);
 	if (rc) {
 		DSI_ERR("[%s] failed to send DSI_CMD_ESD_SWITCH_PAGE, rc=%d\n", panel->name, rc);
+		return rc;
+	}
+
+	return rc;
+}
+
+int oplus_display_read_status_post(struct dsi_panel *panel)
+{
+	int rc = 0;
+
+	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_DEFAULT_SWITCH_PAGE, false);
+	if (rc) {
+		DSI_ERR("[%s] failed to send DSI_CMD_DEFAULT_SWITCH_PAGE, rc=%d\n", panel->name, rc);
 		return rc;
 	}
 
@@ -879,6 +899,59 @@ void oplus_panel_set_nolp_post(struct dsi_panel *panel)
 	return;
 }
 
+int oplus_panel_gpio_check(struct dsi_panel *panel)
+{
+	int rc = 0;
+	struct oplus_gpio_config *gpio_cfg = NULL;
+
+	if (!(is_project(25001) || is_project(25002) || is_project(25201))) {
+		/* Only Hongyan supports extended I/O */
+		return rc;
+	}
+
+	if (!panel) {
+		OPLUS_DSI_ERR("panel is null\n");
+		return -EINVAL;
+	}
+
+	gpio_cfg = &panel->oplus_panel.gpio_cfg;
+	if (!gpio_cfg) {
+		OPLUS_DSI_ERR("gpio_cfg is null\n");
+		return -EINVAL;
+	}
+
+	/* Check if GPIOs are valid before accessing them */
+	if (gpio_is_valid(gpio_cfg->panel_gpio1)) {
+		OPLUS_DSI_INFO("panel_gpio1 state = %d\n", gpio_get_value_cansleep(gpio_cfg->panel_gpio1));
+	} else {
+		OPLUS_DSI_ERR("panel_gpio1 is invalid\n");
+		rc = -EINVAL;
+	}
+
+	if (gpio_is_valid(gpio_cfg->panel_gpio2)) {
+		OPLUS_DSI_INFO("panel_gpio2 state = %d\n", gpio_get_value_cansleep(gpio_cfg->panel_gpio2));
+	} else {
+		OPLUS_DSI_ERR("panel_gpio2 is invalid\n");
+		rc = -EINVAL;
+	}
+
+	if (gpio_is_valid(gpio_cfg->panel_gpio3)) {
+		OPLUS_DSI_INFO("panel_gpio3 state = %d\n", gpio_get_value_cansleep(gpio_cfg->panel_gpio3));
+	} else {
+		OPLUS_DSI_ERR("panel_gpio3 is invalid\n");
+		rc = -EINVAL;
+	}
+
+	if (gpio_is_valid(panel->reset_config.reset_gpio)) {
+		OPLUS_DSI_INFO("panel_reset_gpio state = %d\n", gpio_get_value_cansleep(panel->reset_config.reset_gpio));
+	} else {
+		OPLUS_DSI_ERR("panel_reset_gpio is invalid\n");
+		rc = -EINVAL;
+	}
+
+	return rc;
+}
+
 void oplus_sde_encoder_handle_framedone_timeout_pre(struct drm_connector *conn)
 {
 	struct sde_connector *sde_conn = NULL;
@@ -904,6 +977,8 @@ void oplus_sde_encoder_handle_framedone_timeout_pre(struct drm_connector *conn)
 		OPLUS_DSI_ERR("panel is null\n");
 		return;
 	}
+
+	oplus_panel_gpio_check(panel);
 
 	return;
 }
@@ -933,6 +1008,8 @@ void oplus_sde_encoder_phys_cmd_wait_for_wr_ptr_pre(struct drm_connector *conn)
 		return;
 	}
 
+	oplus_panel_gpio_check(panel);
+
 	return;
 }
 
@@ -954,6 +1031,7 @@ void oplus_display_ops_init(struct oplus_display_ops *oplus_display_ops)
 	oplus_display_ops->panel_update_backlight = oplus_panel_update_backlight;
 	oplus_display_ops->backlight_setup_pre = oplus_backlight_setup_pre;
 	oplus_display_ops->backlight_setup_post = oplus_backlight_setup_post;
+	oplus_display_ops->get_aod_state = oplus_ofp_get_aod_state;
 
 	/* commit */
 	oplus_display_ops->encoder_kickoff = oplus_encoder_kickoff;
@@ -997,7 +1075,8 @@ void oplus_display_ops_init(struct oplus_display_ops *oplus_display_ops)
 	/* esd */
 	oplus_display_ops->panel_parse_esd_reg_read_configs_post = oplus_panel_parse_esd_reg_read_configs_post;
 	oplus_display_ops->panel_parse_esd_config_post = oplus_panel_parse_esd_config_post;
-	oplus_display_ops->display_read_status = oplus_display_read_status;
+	oplus_display_ops->display_read_status_pre = oplus_display_read_status_pre;
+	oplus_display_ops->display_read_status_post = oplus_display_read_status_post;
 	oplus_display_ops->display_check_status_pre = oplus_display_check_status_pre;
 	oplus_display_ops->display_check_status_post = oplus_display_check_status_post;
 	oplus_display_ops->display_validate_status = oplus_display_validate_status;

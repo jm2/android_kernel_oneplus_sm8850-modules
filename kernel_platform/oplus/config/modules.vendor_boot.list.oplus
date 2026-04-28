@@ -7,7 +7,6 @@ oplus_charger_present.ko
 oplus_bsp_boot_projectinfo.ko
 oplus_bsp_bootmode.ko
 oplus_bsp_bootloader_log.ko
-oplus_bsp_ex_gpio.ko
 ufs-oplus-dbg.ko
 device_info.ko
 oplus_bsp_storage_io_metrics.ko

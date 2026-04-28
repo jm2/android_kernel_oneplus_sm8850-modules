@@ -18,6 +18,7 @@
 #include <linux/mm.h>
 #include <linux/sa_group.h>
 #include <linux/sa_common.h>
+#include <linux/jump_label.h>
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_OSVELTE)
 #include "../mm_osvelte/mm-config.h"
 #include "../mm_osvelte/common.h"
@@ -45,6 +46,12 @@ static struct proc_dir_entry *dynamic_swappiness_entry;
 #define PARA_BUF_LEN 128
 static int g_hybridswapd_swappiness = 200;
 static struct proc_dir_entry *para_entry;
+
+static struct tracepoint *p__tracepoint_android_rvh_kswapd_shrink_node;
+static struct tracepoint *p__tracepoint_android_rvh_perform_reclaim;
+static struct static_key *p_lru_gen_caps;
+typedef void (*mem_cgroup_flush_stats_t)(struct mem_cgroup *memcg);
+static mem_cgroup_flush_stats_t mem_cgroup_flush_stats_dup;
 
 #ifdef CONFIG_HYBRIDSWAP_SWAPD
 typedef bool (*free_swap_is_low_func)(void);
@@ -126,6 +133,24 @@ static void zo_set_inactive_ratio(void *data, unsigned long *inactive_ratio, int
 }
 */
 
+static inline void do_mem_cgroup_flush(void)
+{
+        if (static_key_enabled(p_lru_gen_caps))
+		return;
+	mem_cgroup_flush_stats_dup(NULL);
+}
+
+static void mem_cgroup_flush_kswapd(void *data, unsigned long *nr_reclaimed)
+{
+	do_mem_cgroup_flush();
+}
+
+static void mem_cgroup_flush_reclaim(void *data, int order, gfp_t gfp_mask, nodemask_t *nodemask,
+				unsigned long *progress, bool *skip)
+{
+	do_mem_cgroup_flush();
+}
+
 #if IS_ENABLED(CONFIG_OPLUS_BALANCE_ANON_FILE_RECLAIM)
 static void balance_reclaim(void *unused, bool *balance_anon_file_reclaim)
 {
@@ -187,6 +212,17 @@ static int register_zram_opt_vendor_hooks(void)
 		goto out;
 	}
 	*/
+
+	if (p_lru_gen_caps && mem_cgroup_flush_stats_dup
+			   && p__tracepoint_android_rvh_kswapd_shrink_node
+			   && p__tracepoint_android_rvh_perform_reclaim) {
+		ret = android_rvh_probe_register(p__tracepoint_android_rvh_kswapd_shrink_node, mem_cgroup_flush_kswapd, NULL);
+		if (ret != 0)
+			pr_err("register_trace_android_rvh_kswapd_shrink_node failed! ret=%d\n", ret);
+		ret = android_rvh_probe_register(p__tracepoint_android_rvh_perform_reclaim, mem_cgroup_flush_reclaim, NULL);
+		if (ret != 0)
+			pr_err("register_trace_android_rvh_perform_reclaim failed! ret=%d\n", ret);
+	}
 
 #if IS_ENABLED(CONFIG_OPLUS_BALANCE_ANON_FILE_RECLAIM)
 	ret = register_trace_android_rvh_set_balance_anon_file_reclaim(balance_reclaim,
@@ -450,6 +486,24 @@ static void __exit destroy_dynamic_swappiness_proc(void)
 }
 #endif
 
+static void get_all_symbols(void)
+{
+	p__tracepoint_android_rvh_kswapd_shrink_node =
+		(struct tracepoint *)osvelte_kallsyms_lookup_name("__tracepoint_android_rvh_kswapd_shrink_node");
+	if (!p__tracepoint_android_rvh_kswapd_shrink_node)
+		pr_err("failed to lookup __tracepoint_android_rvh_kswapd_shrink_node\n");
+	p__tracepoint_android_rvh_perform_reclaim =
+		(struct tracepoint *)osvelte_kallsyms_lookup_name("__tracepoint_android_rvh_perform_reclaim");
+	if (!p__tracepoint_android_rvh_perform_reclaim)
+		pr_err("failed to lookup __tracepoint_android_rvh_perform_reclaim\n");
+	p_lru_gen_caps = (struct static_key *)osvelte_kallsyms_lookup_name("lru_gen_caps");
+        if (!p_lru_gen_caps)
+                pr_err("failed to lookup lru_gen_caps\n");
+        mem_cgroup_flush_stats_dup = osvelte_kallsyms_lookup_name("mem_cgroup_flush_stats");
+        if (!mem_cgroup_flush_stats_dup)
+                pr_err("failed to lookup mem_cgroup_flush_stats\n");
+}
+
 static int __init zram_opt_init(void)
 {
 	int ret = 0;
@@ -465,6 +519,8 @@ static int __init zram_opt_init(void)
 	ret = create_swappiness_para_proc();
 	if (ret)
 		return ret;
+
+	get_all_symbols();
 
 	ret = register_zram_opt_vendor_hooks();
 	if (ret != 0) {

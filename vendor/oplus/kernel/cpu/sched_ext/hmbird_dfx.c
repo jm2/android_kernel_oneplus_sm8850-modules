@@ -7,6 +7,7 @@
 #include <linux/errno.h>
 #include <linux/gfp.h>
 #include <linux/init.h>
+#include <linux/irq_work.h>
 #include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -15,6 +16,8 @@
 #include <linux/pid.h>
 #include <linux/printk.h>
 #include <linux/proc_fs.h>
+#include <linux/pid_namespace.h>
+#include <linux/rcupdate.h>
 #include <linux/sched/signal.h>
 #include <linux/seq_file.h>
 #include <linux/signal.h>
@@ -127,6 +130,8 @@ struct hb_ctx {
 	unsigned long feed_count;
 
 	struct        delayed_work timeout_work;
+	struct        irq_work notify_work;
+	atomic_t      notify_pending;
 	u64  timeout_nsec;
 };
 
@@ -135,9 +140,14 @@ static struct hb_ctx *g_manager_hb;
 struct gpa_ctx {
 	struct mutex  lock;
 	pid_t         pid;
+	struct        irq_work notify_work;
+	atomic_t      notify_pending;
 };
 
 static struct gpa_ctx *g_gpa_hb;
+
+static void gpa_notify_irq_workfn(struct irq_work *work);
+static void manager_notify_irq_workfn(struct irq_work *work);
 
 static int scene_stat_show(struct seq_file *m, void *v)
 {
@@ -650,6 +660,21 @@ static const struct proc_ops manager_info_fops = {
 	.proc_release	= single_release,
 };
 
+extern struct pid_namespace init_pid_ns;
+
+static struct pid *find_get_pid_in_init_ns(pid_t pid)
+{
+	struct pid *p;
+
+	rcu_read_lock();
+	p = find_pid_ns(pid, &init_pid_ns);
+	if (p)
+		get_pid(p);
+	rcu_read_unlock();
+
+	return p;
+}
+
 static bool is_expired_locked(struct hb_ctx *hb, unsigned long now)
 {
 	if (hb->state != HB_RUNNING) return false;
@@ -661,11 +686,11 @@ static bool is_expired_locked(struct hb_ctx *hb, unsigned long now)
 	return time_after(now, hb->last_feed_jiffies + delta_jiffies);
 }
 
-static void send_sig_to_process_locked(pid_t pid)
+static void send_sig_to_process(pid_t pid)
 {
 	if (pid <= 0) return;
 
-	struct pid *p = find_get_pid(pid);
+	struct pid *p = find_get_pid_in_init_ns(pid);
 	if (!p) {
 		hmbird_pr_warn("pid %d not found (struct pid) when sending signal\n", pid);
 		return;
@@ -688,25 +713,59 @@ static void send_sig_to_process_locked(pid_t pid)
 	put_pid(p);
 }
 
+static void gpa_notify_irq_workfn(struct irq_work *work)
+{
+	struct gpa_ctx *ctx = container_of(work, struct gpa_ctx, notify_work);
+	pid_t pid = READ_ONCE(ctx->pid);
+
+	if (pid > 0)
+		send_sig_to_process(pid);
+
+	atomic_set(&ctx->notify_pending, 0);
+}
+
+static void manager_notify_irq_workfn(struct irq_work *work)
+{
+	struct hb_ctx *ctx = container_of(work, struct hb_ctx, notify_work);
+	pid_t pid = READ_ONCE(ctx->pid);
+
+	if (pid > 0)
+		send_sig_to_process(pid);
+
+	atomic_set(&ctx->notify_pending, 0);
+}
+
 void notify_gpa_exit_hmbird(void)
 {
-	mutex_lock(&g_gpa_hb->lock);
-	send_sig_to_process_locked(g_gpa_hb->pid);
-	mutex_unlock(&g_gpa_hb->lock);
+	bool need_queue = false;
+	pid_t pid = READ_ONCE(g_gpa_hb->pid);
+
+	if (pid > 0 &&
+	    atomic_cmpxchg(&g_gpa_hb->notify_pending, 0, 1) == 0)
+		need_queue = true;
+
+	if (need_queue)
+		irq_work_queue(&g_gpa_hb->notify_work);
 }
 
 void notify_manager_exit(void)
 {
-	mutex_lock(&g_manager_hb->lock);
-	send_sig_to_process_locked(g_manager_hb->pid);
-	mutex_unlock(&g_manager_hb->lock);
+	bool need_queue = false;
+	pid_t pid = READ_ONCE(g_manager_hb->pid);
+
+	if (pid > 0 &&
+	    atomic_cmpxchg(&g_manager_hb->notify_pending, 0, 1) == 0)
+		need_queue = true;
+
+	if (need_queue)
+		irq_work_queue(&g_manager_hb->notify_work);
 }
 
 static void notify_timeout_locked(struct hb_ctx *c)
 {
 	if (c->app == HB_MANAGER) {
 		hmbird_pr_info("heartbeat - oplusHmbirdBpfManager TIMEOUT, notifying gpa to exit\n");
-		send_sig_to_process_locked(g_gpa_hb->pid);
+		send_sig_to_process(READ_ONCE(g_gpa_hb->pid));
 	}
 }
 
@@ -867,7 +926,7 @@ static ssize_t manager_pid_write(struct file *file, const char __user *ubuf, siz
 	}
 
 	mutex_lock(&g_manager_hb->lock);
-	g_manager_hb->pid = (pid_t)pid;
+	WRITE_ONCE(g_manager_hb->pid, (pid_t)pid);
 	hmbird_pr_info("manager pid set to %d\n", g_manager_hb->pid);
 	mutex_unlock(&g_manager_hb->lock);
 	return len;
@@ -903,7 +962,7 @@ static ssize_t gpa_pid_write(struct file *file, const char __user *ubuf, size_t 
 	}
 
 	mutex_lock(&g_gpa_hb->lock);
-	g_gpa_hb->pid = (pid_t)pid;
+	WRITE_ONCE(g_gpa_hb->pid, (pid_t)pid);
 	hmbird_pr_info("gpa pid set to %d\n", g_gpa_hb->pid);
 	mutex_unlock(&g_gpa_hb->lock);
 	return len;
@@ -1101,7 +1160,7 @@ static void remove_stats_procs(void)
 	remove_proc_entry(SCENE_STAT_PROC, d_oplus_hmbird);
 }
 
-int manager_hb_init(void)
+int hb_init(void)
 {
 	g_manager_hb = kzalloc(sizeof(*g_manager_hb), GFP_KERNEL);
 	if (!g_manager_hb) return -ENOMEM;
@@ -1115,6 +1174,8 @@ int manager_hb_init(void)
 	g_manager_hb->timeout_nsec = MANAGER_HB_TIMEOUT_NSEC;
 
 	INIT_DELAYED_WORK(&g_manager_hb->timeout_work, timeout_workfn);
+	init_irq_work(&g_manager_hb->notify_work, manager_notify_irq_workfn);
+	atomic_set(&g_manager_hb->notify_pending, 0);
 
 	g_manager_hb->start_count = 0;
 	g_manager_hb->stop_count = 0;
@@ -1125,21 +1186,31 @@ int manager_hb_init(void)
 
 	mutex_init(&g_gpa_hb->lock);
 	g_gpa_hb->pid = 0;
+	init_irq_work(&g_gpa_hb->notify_work, gpa_notify_irq_workfn);
+	atomic_set(&g_gpa_hb->notify_pending, 0);
 
 	hmbird_pr_info("loaded manager_hb, timeout = %llu ns\n", g_manager_hb->timeout_nsec);
 	return 0;
 }
 
-void manager_hb_exit(void)
+void hb_exit(void)
 {
-	if (!g_manager_hb) return;
+	if (g_manager_hb) {
+		cancel_delayed_work_sync(&g_manager_hb->timeout_work);
+		irq_work_sync(&g_manager_hb->notify_work);
+		mutex_destroy(&g_manager_hb->lock);
+		kfree(g_manager_hb);
+		g_manager_hb = NULL;
+	}
 
-	cancel_delayed_work_sync(&g_manager_hb->timeout_work);
-	mutex_destroy(&g_manager_hb->lock);
-	kfree(g_manager_hb);
-	g_manager_hb = NULL;
+	if (g_gpa_hb) {
+		irq_work_sync(&g_gpa_hb->notify_work);
+		mutex_destroy(&g_gpa_hb->lock);
+		kfree(g_gpa_hb);
+		g_gpa_hb = NULL;
+	}
 
-	hmbird_pr_info("unloaded manager_hb.\n");
+	hmbird_pr_info("unloaded hb.\n");
 }
 
 int hmbird_dfx_init(void)
@@ -1151,7 +1222,7 @@ int hmbird_dfx_init(void)
 		goto err;
 	}
 
-	ret = manager_hb_init();
+	ret = hb_init();
 	if (ret < 0) {
 		goto err;
 	}
@@ -1164,5 +1235,5 @@ err:
 void hmbird_dfx_exit(void)
 {
 	remove_stats_procs();
-	manager_hb_exit();
+	hb_exit();
 }

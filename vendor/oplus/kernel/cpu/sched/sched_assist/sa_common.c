@@ -14,7 +14,7 @@
 #include <linux/cpumask.h>
 #include <linux/sched/topology.h>
 #include <linux/sched/task.h>
-
+#include <linux/string.h>
 #include <linux/sched/cputime.h>
 #include <kernel/sched/sched.h>
 #include <fs/proc/internal.h>
@@ -106,6 +106,9 @@ DEFINE_PER_CPU(int[OPLUS_MAX_PAUSE_TYPE], oplus_cur_pause_client);
 EXPORT_SYMBOL(oplus_cur_pause_client);
 #endif /* CONFIG_OPLUS_SCHED_HALT_MASK_PRT */
 
+#define TURBO_VIP_GROUP_NUM 6
+#define TURBO_VIP_WINDOW    0
+
 /* debug print frequency limit */
 static DEFINE_PER_CPU(int, prev_ux_state);
 static DEFINE_PER_CPU(int, prev_sub_ux_state);
@@ -114,6 +117,16 @@ static DEFINE_PER_CPU(u64, prev_vruntime);
 static DEFINE_PER_CPU(u64, prev_min_vruntime);
 static DEFINE_PER_CPU(u64, prev_preset_vruntime);
 static DEFINE_PER_CPU(int, prev_hwbinder_flag);
+static int turbo_vip_windows;
+
+static const char *turbo_vip_groups[TURBO_VIP_GROUP_NUM] = {
+	"window",
+	"ss",
+	"sui",
+	"sf",
+	"camera",
+	"top_app"
+};
 
 #if IS_ENABLED(CONFIG_SCHED_WALT)
 #define WINDOW_SIZE (16000000)
@@ -212,6 +225,7 @@ bool is_heavy_load_top_task(struct task_struct *p)
 }
 
 struct ux_sched_cputopo ux_sched_cputopo;
+bool global_less_prime_cpu_arch;
 
 static inline void sched_init_ux_cputopo(void)
 {
@@ -315,6 +329,25 @@ static void build_oplus_cpu_array(void)
 }
 #endif
 
+inline bool is_less_prime_cpu_arch(void)
+{
+	unsigned int sliver_cpus = 0;
+	unsigned int total_cpus = 0;
+	int i;
+	bool ret = false;
+
+	for (i = 0; i < ux_sched_cputopo.cls_nr; i++) {
+		if (i == 0) {
+			sliver_cpus = cpumask_weight(&ux_sched_cputopo.sched_cls[i].cpus);
+		}
+		total_cpus += cpumask_weight(&ux_sched_cputopo.sched_cls[i].cpus);
+	}
+	/* The number of small cpus at least two more than that of prime cpus */
+	ret = sliver_cpus >= (total_cpus - sliver_cpus + 4);
+
+	return ret;
+}
+
 void update_ux_sched_cputopo(void)
 {
 	unsigned long cpu_cap = 0;
@@ -374,6 +407,8 @@ void update_ux_sched_cputopo(void)
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_LOADBALANCE)
 	build_oplus_cpu_array();
 #endif
+
+	global_less_prime_cpu_arch = is_less_prime_cpu_arch();
 }
 EXPORT_SYMBOL(update_ux_sched_cputopo);
 
@@ -667,6 +702,34 @@ int is_vip_mvp(struct task_struct *p)
 
 	return atomic_read(&ots->is_vip_mvp);
 }
+
+inline void tracing_vip_focus_window(bool vip_qualified, int tgid)
+{
+	char buf_turbo_state[64];
+
+	if (!vip_qualified)
+		turbo_vip_windows = --turbo_vip_windows < 0 ? 0 : turbo_vip_windows;
+	else
+		++turbo_vip_windows;
+
+	snprintf(buf_turbo_state, sizeof(buf_turbo_state), "C|9999|turbo_vip_group[%s]|%d\n", turbo_vip_groups[TURBO_VIP_WINDOW], turbo_vip_windows);
+	tracing_mark_write(buf_turbo_state);
+}
+
+void exp_turbo_vip_2_ux(bool vip_qualified, int group, int tgid)
+{
+	char buf_turbo_state[64];
+
+	if (group >= TURBO_VIP_GROUP_NUM || group < 0)
+		return;
+
+	if (group == TURBO_VIP_WINDOW)
+		return tracing_vip_focus_window(vip_qualified, tgid);
+
+	snprintf(buf_turbo_state, sizeof(buf_turbo_state), "C|9999|turbo_vip_group[%s]|%d\n", turbo_vip_groups[group], vip_qualified ? tgid : 0);
+	tracing_mark_write(buf_turbo_state);
+}
+EXPORT_SYMBOL(exp_turbo_vip_2_ux);
 
 void ux_state_systrace_c(unsigned int cpu, struct task_struct *p)
 {
@@ -1483,11 +1546,7 @@ void adjust_rt_lowest_mask(struct task_struct *p, struct cpumask *local_cpu_mask
 				trace_printk("clear cpu from lowestmask, curr_heavy task=%-12s pid=%d drop_cpu=%d\n", task->comm, task->pid, drop_cpu);
 		}
 
-#ifdef CONFIG_OPLUS_SCHED_MT6895
 		if (ux_task_state & SA_TYPE_HEAVY) {
-#else
-		if (sched_assist_scene(SA_LAUNCH) && (ux_task_state & SA_TYPE_HEAVY)) {
-#endif
 			cpumask_clear_cpu(drop_cpu, local_cpu_mask);
 			if (unlikely(global_debug_enabled & DEBUG_FTRACE))
 				trace_printk("clear cpu from lowestmask, curr_heavy task=%-12s pid=%d drop_cpu=%d\n", task->comm, task->pid, drop_cpu);
@@ -1840,6 +1899,9 @@ void sched_setaffinity_tracking(struct task_struct *task, const struct cpumask *
 		clear_bit(OTS_STATE_SET_AFFINITY, &ots->state);
 		ots->affinity_pid = ots->affinity_tgid = -1;
 	} else {
+		if (strncmp(current->comm, "OomAdjuster", TASK_COMM_LEN) == 0)
+			return;
+
 		rcu_read_lock();
 		affinity_pid = current->pid;
 		leader = current->group_leader;

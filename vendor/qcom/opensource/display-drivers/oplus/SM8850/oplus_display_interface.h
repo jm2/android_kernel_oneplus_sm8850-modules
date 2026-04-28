@@ -31,6 +31,7 @@ struct oplus_display_ops {
 		struct mipi_dsi_device *dsi, u32 bl_lvl);
 	void (*backlight_setup_pre)(struct backlight_properties *props, struct dsi_display *display);
 	void (*backlight_setup_post)(struct dsi_display *display);
+	bool (*get_aod_state)(void);
 
 	/* commit */
 	void (*encoder_kickoff)(struct drm_encoder *drm_enc, struct sde_encoder_virt *sde_enc);
@@ -77,7 +78,8 @@ struct oplus_display_ops {
 	/* esd */
 	int (*panel_parse_esd_reg_read_configs_post)(struct dsi_panel *panel);
 	void (*panel_parse_esd_config_post)(struct dsi_panel *panel);
-	int (*display_read_status)(struct dsi_panel *panel);
+	int (*display_read_status_pre)(struct dsi_panel *panel);
+	int (*display_read_status_post)(struct dsi_panel *panel);
 	bool (*display_check_status_pre)(struct dsi_panel *panel);
 	int (*display_check_status_post)(struct dsi_display *display);
 	int (*display_validate_status)(struct dsi_display *display);

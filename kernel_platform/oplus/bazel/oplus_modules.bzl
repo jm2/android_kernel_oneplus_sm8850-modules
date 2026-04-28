@@ -100,7 +100,6 @@ def define_oplus_ddk_modules(target, msm_target, variant):
         "//vendor/oplus/kernel/network:oplus_network_stats_calc",
         "//vendor/oplus/kernel/network:oplus_network_tuning",
         "//vendor/oplus/kernel/network:oplus_network_vnet",
-        "//vendor/oplus/kernel/peripherals/oplus_ex_gpio:oplus_bsp_ex_gpio",
         "//vendor/oplus/kernel/power/power_hook:oplus_power_hook",
         "//vendor/oplus/kernel/power/rpmh:oplus_rpmh_statics",
         "//vendor/oplus/kernel/power/standby_netlink:oplus_standby_netlink",

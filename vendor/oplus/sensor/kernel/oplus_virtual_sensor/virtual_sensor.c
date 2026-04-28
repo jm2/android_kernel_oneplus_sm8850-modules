@@ -26,9 +26,18 @@ void oplus_init_sensor_state(struct SensorState *mSensorState)
 	mSensorState[SENSOR_TYPE_PICKUP_DETECT].sensorType = SENSOR_TYPE_PICKUP_DETECT;
 	mSensorState[SENSOR_TYPE_PICKUP_DETECT].rate = SENSOR_RATE_ONCHANGE;
 
+#ifdef CONFIG_OPLUS_FEATURE_FLAT_DETECT
+	mSensorState[SENSOR_TYPE_FLAT_DETECT].sensorType = SENSOR_TYPE_FLAT_DETECT;
+	mSensorState[SENSOR_TYPE_FLAT_DETECT].rate = SENSOR_RATE_ONCHANGE;
+#endif
+
+#ifdef CONFIG_OPLUS_FEATURE_CHOP_DETECT
+	mSensorState[SENSOR_TYPE_CHOP_DETECT].sensorType = SENSOR_TYPE_CHOP_DETECT;
+	mSensorState[SENSOR_TYPE_CHOP_DETECT].rate = SENSOR_RATE_ONCHANGE;
+#endif
+
 	mSensorState[SENSOR_TYPE_FP_DISPLAY].sensorType = SENSOR_TYPE_FP_DISPLAY;
 	mSensorState[SENSOR_TYPE_FP_DISPLAY].rate = SENSOR_RATE_ONCHANGE;
-
 
 	mSensorState[SENSOR_TYPE_LUX_AOD].sensorType = SENSOR_TYPE_LUX_AOD;
 	mSensorState[SENSOR_TYPE_LUX_AOD].rate = SENSOR_RATE_ONCHANGE;
@@ -106,6 +115,20 @@ void oplus_init_sensor_state(struct SensorState *mSensorState)
 	p->gain = 1;
 	strlcpy(p->name, "pickup", sizeof(p->name));
 	strlcpy(p->vendor, "oplus", sizeof(p->vendor));
+
+#ifdef CONFIG_OPLUS_FEATURE_FLAT_DETECT
+	p = &mSensorState[SENSOR_TYPE_FLAT_DETECT];
+	p->gain = 1;
+	strlcpy(p->name, "flat", sizeof(p->name));
+	strlcpy(p->vendor, "oplus", sizeof(p->vendor));
+#endif
+
+#ifdef CONFIG_OPLUS_FEATURE_CHOP_DETECT
+	p = &mSensorState[SENSOR_TYPE_CHOP_DETECT];
+	p->gain = 1;
+	strlcpy(p->name, "chop", sizeof(p->name));
+	strlcpy(p->vendor, "oplus", sizeof(p->vendor));
+#endif
 
 	p = &mSensorState[SENSOR_TYPE_FP_DISPLAY];
 	p->gain = 1;
@@ -234,6 +257,16 @@ static int handle_to_index(int handle)
 	case ID_PICKUP_DETECT:
 		index = pickup_detect;
 		break;
+#ifdef CONFIG_OPLUS_FEATURE_FLAT_DETECT
+	case ID_FLAT_DETECT:
+		index = flat_detect;
+		break;
+#endif
+#ifdef CONFIG_OPLUS_FEATURE_CHOP_DETECT
+	case ID_CHOP_DETECT:
+		index = chop_detect;
+		break;
+#endif
 	case ID_FP_DISPLAY:
 		index = fp_display;
 		break;
@@ -457,14 +490,16 @@ static ssize_t virtual_sensor_show_active(struct device *dev,
 	}
 
 #ifdef CONFIG_OPLUS_FEATURE_SENSOR_MONITOR
-	return snprintf(buf, PAGE_SIZE, "%d,%d,%d,%d,%d,%d\n",
+	return snprintf(buf, PAGE_SIZE, "%d,%d,%d,%d,%d,%d,%d,%d\n",
 		enable_div[camera_protect], enable_div[free_fall],
 		enable_div[pickup_detect], enable_div[fp_display],
+		enable_div[flat_detect], enable_div[chop_detect],
 		enable_div[lux_aod], enable_div[sensor_monitor]);
 #else
-return snprintf(buf, PAGE_SIZE, "%d,%d,%d,%d,%d\n",
+return snprintf(buf, PAGE_SIZE, "%d,%d,%d,%d,%d,%d,%d\n",
 		enable_div[camera_protect], enable_div[free_fall],
 		enable_div[pickup_detect], enable_div[fp_display],
+		enable_div[flat_detect], enable_div[chop_detect],
 		enable_div[lux_aod]);
 #endif
 }

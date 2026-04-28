@@ -119,6 +119,11 @@ static bool _sde_evtlog_dump_calc_range(struct sde_dbg_evtlog *evtlog,
 		bool update_last_entry, bool full_dump)
 {
 	int max_entries = full_dump ? SDE_EVTLOG_ENTRY : SDE_EVTLOG_PRINT_ENTRY;
+#ifdef OPLUS_FEATURE_DISPLAY
+	if (get_eng_version() == FACTORY || get_eng_version() == AGING || get_eng_version() == HIGH_TEMP_AGING) {
+		max_entries = 0x10000;
+	}
+#endif
 
 	if (!evtlog)
 		return false;

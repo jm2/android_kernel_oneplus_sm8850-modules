@@ -3043,9 +3043,6 @@ bool adreno_hwsched_log_nonfatal_gpu_fault(struct adreno_device *adreno_dev,
 	case GMU_RBBM_ATB_BUF_OVERFLOW:
 		dev_crit_ratelimited(dev, "RBBM: ATB bus overflow\n");
 		break;
-	case GMU_UCHE_OOB_ACCESS:
-		dev_crit_ratelimited(dev, "UCHE: Out of bounds access\n");
-		break;
 	case GMU_UCHE_TRAP_INTR:
 		dev_crit_ratelimited(dev, "UCHE: Trap interrupt\n");
 		break;

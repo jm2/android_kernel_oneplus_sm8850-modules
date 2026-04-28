@@ -17,7 +17,7 @@
 
 LIST_HEAD(css_tg_map_list);
 
-int bg_cgrp, fg_cgrp, fgwd_cgrp, ta_cgrp;
+int bg_cgrp, lbg_cgrp, hbg_cgrp, fg_cgrp, fgwd_cgrp, ta_cgrp;
 
 static inline int task_cpu_cgroup(struct task_struct *p)
 {
@@ -48,7 +48,9 @@ bool bg_task(struct task_struct *p)
 	if (-1 == cpu_cgrp_id)
 		return false;
 
-	if (bg_cgrp && cpu_cgrp_id == bg_cgrp)
+	if ((bg_cgrp && cpu_cgrp_id == bg_cgrp)
+		|| (lbg_cgrp && cpu_cgrp_id == lbg_cgrp)
+		|| (hbg_cgrp && cpu_cgrp_id == hbg_cgrp))
 		return true;
 
 	return false;
@@ -332,6 +334,10 @@ void save_oplus_sg_info(struct css_tg_map *map)
 		fgwd_cgrp = map->id;
 	else if (same_cgrp(map->tg_name, "background"))
 		bg_cgrp = map->id;
+	else if (same_cgrp(map->tg_name, "l-background"))
+		lbg_cgrp = map->id;
+	else if (same_cgrp(map->tg_name, "h-background"))
+		hbg_cgrp = map->id;
 	else if (same_cgrp(map->tg_name, "top-app"))
 		ta_cgrp = map->id;
 }
@@ -434,9 +440,39 @@ void oplus_sg_wake_up_new_task(struct task_struct *tsk)
 #endif
 }
 
+#ifndef CONFIG_OPLUS_SYSTEM_KERNEL_QCOM
+#if !IS_ENABLED(CONFIG_MTK_SCHED_GROUP_AWARE)
+static void oplus_sg_pre_init(void)
+{
+	struct cgroup_subsys_state *css = &root_task_group.css;
+	struct cgroup_subsys_state *top_css = css;
+
+	oplus_update_tg_map(top_css, true);
+
+	rcu_read_lock();
+	css_for_each_child(css, top_css)
+		oplus_update_tg_map(css, true);
+	rcu_read_unlock();
+}
+
+static void android_rvh_cpu_cgroup_online_handler(void *unused, struct cgroup_subsys_state *css)
+{
+	oplus_update_tg_map(css, false);
+}
+
+#endif
+#endif
+
 static void register_oplus_cgrp_hooks(void)
 {
 	register_trace_android_vh_sched_move_task(android_vh_sched_move_task_handler, NULL);
+#ifndef CONFIG_OPLUS_SYSTEM_KERNEL_QCOM
+#if !IS_ENABLED(CONFIG_MTK_SCHED_GROUP_AWARE)
+	oplus_sg_pre_init();
+	register_trace_android_rvh_cpu_cgroup_online(android_rvh_cpu_cgroup_online_handler, NULL);
+
+#endif
+#endif
 }
 
 void oplus_sched_group_init(struct proc_dir_entry *pde)

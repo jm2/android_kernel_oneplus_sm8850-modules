@@ -449,6 +449,7 @@ struct oplus_chg_wls_bt_info {
 	int connect;
 	int incar;
 	int carlink;
+	int bttype;
 };
 
 struct wls_track_record {
@@ -1951,6 +1952,31 @@ static void oplus_chg_wls_publish_fw_upgrading_msg(struct oplus_chg_wls *wls_dev
 	rc = oplus_mms_publish_msg(wls_dev->wls_topic, msg);
 	if (rc < 0) {
 		chg_err("publish wls fw_upgrading msg error, rc=%d\n", rc);
+		kfree(msg);
+	}
+}
+
+static void oplus_chg_wls_publish_tx_enable_msg(struct oplus_chg_wls *wls_dev, bool value)
+{
+	struct mms_msg *msg;
+	int rc;
+	bool enable;
+
+	if (wls_dev == NULL || wls_dev->wls_topic == NULL) {
+		chg_err("wls_topic not ready\n");
+		return;
+	}
+
+	enable = (wls_dev->wls_status.wls_type == OPLUS_CHG_WLS_TRX);
+	chg_info("set value=%s, tx_enable=%s\n", value ? "true" : "false", enable ? "true" : "false");
+	msg = oplus_mms_alloc_msg(MSG_TYPE_ITEM, MSG_PRIO_MEDIUM, WLS_ITEM_TX_ENABLE);
+	if (msg == NULL) {
+		chg_err("alloc msg error\n");
+		return;
+	}
+	rc = oplus_mms_publish_msg(wls_dev->wls_topic, msg);
+	if (rc < 0) {
+		chg_err("publish wls tx_enable msg error, rc=%d\n", rc);
 		kfree(msg);
 	}
 }
@@ -4604,8 +4630,16 @@ static int oplus_chg_wls_set_trx_enable(struct oplus_chg_wls *wls_dev, bool en)
 		wls_status->trx_present = true;
 		wls_status->trx_present_keep = false;
 		wls_status->trx_rxac = false;
+		oplus_chg_wls_publish_tx_enable_msg(wls_dev, true);
 		oplus_chg_wls_rx_set_trx_start(wls_dev->wls_rx->rx_ic, true);
 
+		if (!wls_dev->trx_wake_lock_on) {
+			chg_info("acquire trx_wake_lock\n");
+			__pm_stay_awake(wls_dev->trx_wake_lock);
+			wls_dev->trx_wake_lock_on = true;
+		} else {
+			chg_err("trx_wake_lock is already stay awake\n");
+		}
 		if (!wls_dev->trx_wake_lock_on) {
 			chg_info("acquire trx_wake_lock\n");
 			__pm_stay_awake(wls_dev->trx_wake_lock);
@@ -4645,6 +4679,7 @@ static int oplus_chg_wls_set_trx_enable(struct oplus_chg_wls *wls_dev, bool en)
 		}
 		wls_status->track_record.wired_charge_type = 0;
 		oplus_chg_wls_reset_variables(wls_dev);
+		oplus_chg_wls_publish_tx_enable_msg(wls_dev, false);
 		if (is_batt_psy_available(wls_dev))
 			power_supply_changed(wls_dev->batt_psy);
 		if (wls_dev->trx_wake_lock_on) {
@@ -4723,6 +4758,7 @@ static enum oplus_chg_temp_region oplus_chg_wls_get_temp_region(struct oplus_chg
 		temp_region = BATT_TEMP_COLD;
 		break;
 	case TEMP_REGION_LITTLE_COLD:
+	case TEMP_REGION_LITTLE_COLD_HIGH:
 		temp_region = BATT_TEMP_LITTLE_COLD;
 		break;
 	case TEMP_REGION_COOL:
@@ -5046,6 +5082,10 @@ static void oplus_chg_wls_config(struct oplus_chg_wls *wls_dev)
 	int fcc_max_ma;
 	int icl_index;
 	static bool pre_temp_abnormal;
+	union mms_msg_data mms_data = { 0 };
+	int rc;
+	static bool shell_temp_ready = false;
+	int shell_temp = 0;
 
 	ffc_status = oplus_chg_wls_get_ffc_status(wls_dev);
 	if (ffc_status != FFC_DEFAULT) {
@@ -5070,10 +5110,23 @@ static void oplus_chg_wls_config(struct oplus_chg_wls *wls_dev)
 		icl_index = OPLUS_WLS_CHG_BATT_CL_LOW;
 
 	temp_region = oplus_chg_wls_get_temp_region(wls_dev);
+
+	if (wls_dev->comm_topic && !shell_temp_ready) {
+		rc = oplus_mms_get_item_data(wls_dev->comm_topic, COMM_ITEM_SHELL_TEMP, &mms_data, false);
+		if (rc < 0) {
+			chg_err("can't get shell temp data, rc=%d", rc);
+		} else {
+			shell_temp = mms_data.intval;
+			if (shell_temp != GAUGE_INVALID_TEMP)
+				shell_temp_ready = true;
+
+			chg_info("shell temp = %d, shell temp ready = %d\n", shell_temp, shell_temp_ready);
+		}
+	}
 	switch (temp_region) {
 	case BATT_TEMP_COLD:
 	case BATT_TEMP_HOT:
-		if (!pre_temp_abnormal) {
+		if (!pre_temp_abnormal && shell_temp_ready) {
 			pre_temp_abnormal = true;
 			wls_status->online_keep = true;
 			vote(wls_dev->rx_disable_votable, JEITA_VOTER, true, 1, false);
@@ -8132,6 +8185,36 @@ static int oplus_chg_wls_rx_exit_state_epp_plus(struct oplus_chg_wls *wls_dev)
 	return 0;
 }
 
+static void oplus_chg_wls_set_fastchg_started(
+	struct oplus_chg_wls *wls_dev, bool fastchg_started)
+{
+	struct oplus_chg_wls_status *wls_status = &wls_dev->wls_status;
+	struct mms_msg *msg;
+	int rc;
+
+	if (wls_status->fastchg_started == fastchg_started)
+		return;
+
+	wls_status->fastchg_started = fastchg_started;
+
+	if (wls_dev->wls_topic == NULL) {
+		chg_err("wls_topic not ready\n");
+		return;
+	}
+
+	msg = oplus_mms_alloc_msg(
+		MSG_TYPE_ITEM, MSG_PRIO_MEDIUM, WLS_ITEM_FASTCHG_STATUS);
+	if (msg == NULL) {
+		chg_err("alloc msg error\n");
+		return;
+	}
+	rc = oplus_mms_publish_msg(wls_dev->wls_topic, msg);
+	if (rc < 0) {
+		chg_err("publish wls fastchg status msg error, rc=%d\n", rc);
+		kfree(msg);
+	}
+}
+
 #define CP_OPEN_OFFSET		100
 #define CURR_ERR_COUNT_MAX	200
 static int oplus_chg_wls_rx_enter_state_fast(struct oplus_chg_wls *wls_dev)
@@ -8391,7 +8474,7 @@ static int oplus_chg_wls_rx_enter_state_fast(struct oplus_chg_wls *wls_dev)
 			vote(wls_dev->fcc_votable, MAX_VOTER, true, WLS_FASTCHG_CURR_15W_MAX_MA * factor, false);
 		}
 		wls_status->state_sub_step = 0;
-		wls_status->fastchg_started = true;
+		oplus_chg_wls_set_fastchg_started(wls_dev, true);
 		wls_status->fastchg_level_init_temp = 0;
 		wls_status->wait_cep_stable = true;
 		wls_status->fastchg_retry_count = 0;
@@ -10516,6 +10599,7 @@ static const char * const norchg_strategy_mode[] = {
 static const char * const norchg_strategy_temp[] = {
 	[TEMP_REGION_COLD]	= "wls_temp_cold",
 	[TEMP_REGION_LITTLE_COLD]	= "wls_temp_little_cold",
+	[TEMP_REGION_LITTLE_COLD_HIGH]	= "wls_temp_little_cold_high",
 	[TEMP_REGION_COOL]	= "wls_temp_cool",
 	[TEMP_REGION_LITTLE_COOL]	= "wls_temp_little_cool",
 	[TEMP_REGION_PRE_NORMAL]	= "wls_temp_pre_normal",
@@ -10768,8 +10852,17 @@ static int read_norchg_strategy_from_node(struct device_node *node, const char *
 			for (k = TEMP_REGION_LITTLE_COLD; k < TEMP_REGION_HOT; k++) {
 				rc = of_property_count_elems_of_size(norchg_vol_node, norchg_strategy_temp[k], sizeof(u32));
 				if (rc < 0) {
-					chg_err("Count %s failed, rc=%d\n", norchg_strategy_temp[k], rc);
-					return rc;
+					if (k > 0 && k == TEMP_REGION_LITTLE_COLD_HIGH) {
+						chg_info("%s node not found, copy little_cold paras\n", norchg_strategy_temp[k]);
+						ranges->norchg_step[i][j][k].max_step = ranges->norchg_step[i][j][k - 1].max_step;
+						memmove(ranges->norchg_step[i][j][k].norchg_step,
+						       ranges->norchg_step[i][j][k - 1].norchg_step,
+						       sizeof(ranges->norchg_step[i][j][k].norchg_step));
+						continue;
+					} else {
+						chg_err("Count %s failed, rc=%d\n", norchg_strategy_temp[k], rc);
+						return rc;
+					}
 				}
 				length = rc;
 
@@ -13139,6 +13232,7 @@ static void oplus_chg_wls_temp_region_update_work(struct work_struct *work)
 		else
 			wls_dev->wls_status.fastchg_level = 0;
 	}
+
 	oplus_chg_wls_config(wls_dev);
 }
 
@@ -14038,6 +14132,25 @@ static int oplus_chg_wls_mms_update_track_break_manu(struct oplus_mms *mms, unio
 	return 0;
 }
 
+static int oplus_chg_wls_mms_update_tx_enable(struct oplus_mms *mms, union mms_msg_data *data)
+{
+	struct oplus_chg_wls *wls_dev;
+
+	if (mms == NULL) {
+		chg_err("mms is NULL");
+		return -EINVAL;
+	}
+	if (data == NULL) {
+		chg_err("data is NULL");
+		return -EINVAL;
+	}
+	wls_dev = oplus_mms_get_drvdata(mms);
+
+	data->intval = (int)(wls_dev->wls_status.wls_type == OPLUS_CHG_WLS_TRX);
+
+	return 0;
+}
+
 static int oplus_chg_wls_mms_update_real_type(struct oplus_mms *mms, union mms_msg_data *data)
 {
 	struct oplus_chg_wls *wls_dev;
@@ -14739,6 +14852,16 @@ static struct mms_item oplus_chg_wls_mms_item[] = {
 			.down_thr_enable = false,
 			.dead_thr_enable = false,
 			.update = oplus_chg_wls_mms_update_track_break_manu,
+		}
+	},
+	{
+		.desc = {
+			.item_id = WLS_ITEM_TX_ENABLE,
+			.str_data = false,
+			.up_thr_enable = false,
+			.down_thr_enable = false,
+			.dead_thr_enable = false,
+			.update = oplus_chg_wls_mms_update_tx_enable,
 		}
 	}
 };

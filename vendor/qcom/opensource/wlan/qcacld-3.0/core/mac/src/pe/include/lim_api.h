@@ -1105,5 +1105,18 @@ QDF_STATUS lim_ll_sap_notify_chan_switch_started(struct wlan_objmgr_vdev *vdev)
 	return QDF_STATUS_E_NOSUPPORT;
 }
 #endif
-/************************************************************/
+
+/**
+ * lim_set_amsdu_for_2g_oui() - Set amsdu for 2 GHz IOT AP
+ * @mac_ctx: mac context
+ * @session: pe session
+ * @bss_desc: bss descriptor
+ *
+ * Query action OUI database for IoT AP, set amsdu state in pe session
+ *
+ * Return: None
+ */
+void lim_set_amsdu_for_2g_oui(struct mac_context *mac_ctx,
+	struct pe_session *session,
+	struct bss_description *bss_desc);
 #endif /* __LIM_API_H */

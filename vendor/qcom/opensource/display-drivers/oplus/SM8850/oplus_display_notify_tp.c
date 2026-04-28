@@ -117,7 +117,7 @@ static void oplus_tp_panel_power_off_rst(struct dsi_panel *panel)
 		}
 	} else {
 		/* for other projects */
-		gpio_set_value(panel->reset_config.reset_gpio, 0);
+		oplus_panel_gpio_set_value(panel->reset_config.reset_gpio, 0);
 	}
 }
 

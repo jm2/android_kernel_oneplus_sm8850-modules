@@ -132,6 +132,7 @@ void oplus_panel_frame_delay(struct dsi_panel *panel, u32 per_frame_us, u32 fram
 int oplus_display_panel_gamma_compensation(struct dsi_display *display);
 int oplus_dsi_panel_parse_lut(struct dsi_panel *panel);
 void oplus_panel_timing_switch_lut_set(struct dsi_panel *panel);
+void oplus_panel_timing_switch_lut_post(struct dsi_panel *panel);
 void oplus_panel_timing_switch_wait_te(struct dsi_panel *panel);
 struct panel_ae174_gamma* get_panel_ae174_gamma(void);
 int oplus_panel_ae174_gamma_compensation(void *dsi_display);

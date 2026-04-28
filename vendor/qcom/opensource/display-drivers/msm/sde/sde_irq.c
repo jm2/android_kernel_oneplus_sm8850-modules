@@ -41,6 +41,12 @@ irqreturn_t sde_irq(struct msm_kms *kms)
 		sde_kms->hw_intr->ops.get_interrupt_sources[sde_kms->hw_intr->hw.disp_op](
 			sde_kms->hw_intr, &interrupts);
 
+#ifdef OPLUS_FEATURE_DISPLAY
+	if (get_eng_version() == FACTORY || get_eng_version() == AGING || get_eng_version() == HIGH_TEMP_AGING) {
+		SDE_EVT32(sde_kms->hw_intr->hw.disp_op, interrupts);
+	}
+#endif
+
 	/* store irq status in case of irq-storm debugging */
 	g_sde_irq_status = interrupts;
 
@@ -73,6 +79,11 @@ irqreturn_t sde_irq(struct msm_kms *kms)
 			goto error;
 		}
 
+#ifdef OPLUS_FEATURE_DISPLAY
+		if (get_eng_version() == FACTORY || get_eng_version() == AGING || get_eng_version() == HIGH_TEMP_AGING) {
+			SDE_EVT32(hwirq, mapping);
+		}
+#endif
 		interrupts &= ~(1 << hwirq);
 	}
 

@@ -107,6 +107,7 @@ int oplus_panel_set_pinctrl_state(struct dsi_panel *panel, bool enable);
  */
 int oplus_panel_pinctrl_init(struct dsi_panel *panel);
 int oplus_panel_parse_power_sequence_config(struct dsi_panel *panel);
+void oplus_panel_gpio_set_value(unsigned gpio, int value);
 int oplus_panel_power_on(struct dsi_panel *panel);
 int oplus_panel_power_off(struct dsi_panel *panel);
 int oplus_panel_prepare(struct dsi_panel *panel);

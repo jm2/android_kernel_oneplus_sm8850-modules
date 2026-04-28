@@ -103,10 +103,8 @@
 
 #define UX_PRIORITY_TOP_APP		0x0A000000
 #define UX_PRIORITY_AUDIO		0x0A000000
-#if IS_ENABLED(CONFIG_OPLUS_FEATURE_PIPELINE)
 #define UX_PRIORITY_PIPELINE_UI 0x06000000
 #define UX_PRIORITY_PIPELINE    0x05000000
-#endif
 
 /* define for sched assist scene type, keep same as the define in java file */
 #define SA_SCENE_OPT_CLEAR			(0)
@@ -230,6 +228,7 @@ extern int global_sched_assist_enabled;
 extern int global_sched_assist_scene;
 extern int global_silver_perf_core;
 extern int global_sched_group_enabled;
+extern bool global_less_prime_cpu_arch;
 
 struct rq;
 
@@ -689,6 +688,7 @@ bool sa_skip_rt_sync(struct rq *rq, struct task_struct *p, bool *sync);
 void ux_state_systrace_c(unsigned int cpu, struct task_struct *p);
 bool sa_rt_skip_ux_cpu(int cpu);
 int is_vip_mvp(struct task_struct *p);
+void exp_turbo_vip_2_ux(bool vip_qualified, int group, int tgid);
 
 /* s64 account_ux_runtime(struct rq *rq, struct task_struct *curr); */
 void opt_ss_lock_contention(struct task_struct *p, unsigned long old_im, int new_im);

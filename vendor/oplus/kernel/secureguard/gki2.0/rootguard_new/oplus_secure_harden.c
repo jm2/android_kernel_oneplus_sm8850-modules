@@ -318,13 +318,16 @@ void oplus_heapspray_check(unsigned int type)
  */
 void oplus_sepolicy_reload(void)
 {
+        pr_info("%s: Function called, PID=%d\n", __func__, current->pid);
 	const char *event_type = "spolicy_reload";
 
 	if (!is_global_init(current)) {
 		pr_err(SG_MIX_HARDEN "%s:Detected illegal porcess reload policy!!!\n", __func__);
 		/* do_exit(SIGKILL); */
-		report_security_event(event_type, SEPOLICY_RL, "");
-	}
+		report_security_event(event_type, SEPOLICY_RL, ""); // report event
+	} else {
+                pr_info("%s: Called by init, allowed\n", __func__);
+        }
 }
 
 static int entry_handler_socket(struct kretprobe_instance *ri, struct pt_regs *regs)
@@ -366,6 +369,7 @@ static int entry_handler_cpuinfo(struct kretprobe_instance *ri, struct pt_regs *
 
 static int entry_handler_sepolicy_reload(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
+        pr_info("%s: Function called ...\n", __func__);
 	oplus_sepolicy_reload();
 	return 0;
 }

@@ -214,6 +214,7 @@ struct oplus_panel {
 	u32 wait_te_config;
 	bool change_voltage_before_panel_bl_0;
 	bool interval_time_nolp_pre;
+	bool interval_time_fps_to_esd_flag;
 
 	/* ---------------- feature variate ---------------- */
 	bool dp_support;
@@ -232,6 +233,7 @@ struct oplus_panel {
 	bool is_apl_read_support;
 	bool white_point_compensation_enabled;
 	bool lut_enabled;
+	bool aod_backlight_async;
 
 	/* ---------------- apollo variate ---------------- */
 	bool is_switching;
@@ -266,6 +268,7 @@ struct oplus_panel {
 	struct mutex oplus_ffc_lock;
 	ktime_t te_timestamp;
 	ktime_t ts_timestamp;
+	ktime_t switch_fps_to_esd_timestamp;
 
 	struct oplus_pwm_turbo_params pwm_params;
 	u32 last_us_per_frame;
@@ -277,6 +280,7 @@ struct oplus_panel {
 	bool pl_check_enable;
 	bool pl_check_flag;
 	int pl_check_time_gap;
+	u32 lut_refresh_rate;
 
 	unsigned int power_on_sequence[PANEL_POWER_SUPPLY_COUNT][2];
 	unsigned int power_off_sequence[PANEL_POWER_SUPPLY_COUNT][2];

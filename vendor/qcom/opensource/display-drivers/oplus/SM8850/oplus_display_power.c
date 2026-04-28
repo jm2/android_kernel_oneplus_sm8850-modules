@@ -831,6 +831,24 @@ int oplus_panel_parse_power_sequence_config(struct dsi_panel *panel)
 	return 0;
 }
 
+void oplus_panel_gpio_set_value(unsigned gpio, int value)
+{
+	struct gpio_desc *desc = gpio_to_desc(gpio);
+
+	if (IS_ERR_OR_NULL(desc)) {
+		OPLUS_DSI_ERR("Invalid desc\n");
+		return;
+	}
+
+	if (gpiod_cansleep(desc)) {
+		gpio_set_value_cansleep(gpio, value);
+	} else {
+		gpio_set_value(gpio, value);
+	}
+
+	return;
+}
+
 int oplus_panel_enable_gpio(struct dsi_panel *panel, const char *gipo_name, bool enable)
 {
 	int rc = 0;
@@ -849,9 +867,9 @@ int oplus_panel_enable_gpio(struct dsi_panel *panel, const char *gipo_name, bool
 			rc = gpio_direction_output(gpio_cfg->panel_gpio1, 1);
 			if (rc)
 				OPLUS_DSI_ERR("unable to set dir for panel_gpio1 rc=%d\n", rc);
-			gpio_set_value(gpio_cfg->panel_gpio1, 1);
+			oplus_panel_gpio_set_value(gpio_cfg->panel_gpio1, 1);
 		} else {
-			gpio_set_value(gpio_cfg->panel_gpio1, 0);
+			oplus_panel_gpio_set_value(gpio_cfg->panel_gpio1, 0);
 		}
 	} else if (!strcmp(gipo_name, "panel_gpio2")
 			&& gpio_is_valid(gpio_cfg->panel_gpio2)) {
@@ -859,9 +877,9 @@ int oplus_panel_enable_gpio(struct dsi_panel *panel, const char *gipo_name, bool
 			rc = gpio_direction_output(gpio_cfg->panel_gpio2, 1);
 			if (rc)
 				OPLUS_DSI_ERR("unable to set dir for panel_gpio2 rc=%d\n", rc);
-			gpio_set_value(gpio_cfg->panel_gpio2, 1);
+			oplus_panel_gpio_set_value(gpio_cfg->panel_gpio2, 1);
 		} else {
-			gpio_set_value(gpio_cfg->panel_gpio2, 0);
+			oplus_panel_gpio_set_value(gpio_cfg->panel_gpio2, 0);
 		}
 	} else if (!strcmp(gipo_name, "panel_gpio3")
 			&& gpio_is_valid(gpio_cfg->panel_gpio3)) {
@@ -869,9 +887,9 @@ int oplus_panel_enable_gpio(struct dsi_panel *panel, const char *gipo_name, bool
 			rc = gpio_direction_output(gpio_cfg->panel_gpio3, 1);
 			if (rc)
 				OPLUS_DSI_ERR("unable to set dir for panel_gpio3 rc=%d\n", rc);
-			gpio_set_value(gpio_cfg->panel_gpio3, 1);
+			oplus_panel_gpio_set_value(gpio_cfg->panel_gpio3, 1);
 		} else {
-			gpio_set_value(gpio_cfg->panel_gpio3, 0);
+			oplus_panel_gpio_set_value(gpio_cfg->panel_gpio3, 0);
 		}
 	} else if (!strcmp(gipo_name, "panel_gpio4")
 			&& gpio_is_valid(gpio_cfg->panel_gpio4)) {
@@ -879,9 +897,9 @@ int oplus_panel_enable_gpio(struct dsi_panel *panel, const char *gipo_name, bool
 			rc = gpio_direction_output(gpio_cfg->panel_gpio4, 1);
 			if (rc)
 				OPLUS_DSI_ERR("unable to set dir for panel_gpio4 rc=%d\n", rc);
-			gpio_set_value(gpio_cfg->panel_gpio4, 1);
+			oplus_panel_gpio_set_value(gpio_cfg->panel_gpio4, 1);
 		} else {
-			gpio_set_value(gpio_cfg->panel_gpio4, 0);
+			oplus_panel_gpio_set_value(gpio_cfg->panel_gpio4, 0);
 		}
 	} else if (!strcmp(gipo_name, "panel_gpio5")
 			&& gpio_is_valid(gpio_cfg->panel_gpio5)) {
@@ -889,9 +907,9 @@ int oplus_panel_enable_gpio(struct dsi_panel *panel, const char *gipo_name, bool
 			rc = gpio_direction_output(gpio_cfg->panel_gpio5, 1);
 			if (rc)
 				OPLUS_DSI_ERR("unable to set dir for panel_gpio5 rc=%d\n", rc);
-			gpio_set_value(gpio_cfg->panel_gpio5, 1);
+			oplus_panel_gpio_set_value(gpio_cfg->panel_gpio5, 1);
 		} else {
-			gpio_set_value(gpio_cfg->panel_gpio5, 0);
+			oplus_panel_gpio_set_value(gpio_cfg->panel_gpio5, 0);
 		}
 	} else if (!strcmp(gipo_name, "pmic_gpio")
 			&& gpio_is_valid(gpio_cfg->pmic_gpio)) {
@@ -899,9 +917,9 @@ int oplus_panel_enable_gpio(struct dsi_panel *panel, const char *gipo_name, bool
 			rc = gpio_direction_output(gpio_cfg->pmic_gpio, 1);
 			if (rc)
 				OPLUS_DSI_ERR("unable to set dir for pmic_gpio rc=%d\n", rc);
-			gpio_set_value(gpio_cfg->pmic_gpio, 1);
+			oplus_panel_gpio_set_value(gpio_cfg->pmic_gpio, 1);
 		} else {
-			gpio_set_value(gpio_cfg->pmic_gpio, 0);
+			oplus_panel_gpio_set_value(gpio_cfg->pmic_gpio, 0);
 		}
 	} else {
 		OPLUS_DSI_ERR("Invalid gpio name or gpio_is_invalid\n");
@@ -1534,4 +1552,3 @@ void oplus_bl_ic_ktz8868_power_off(struct dsi_panel *panel)
 			panel->name, rc);
 	}
 }
-
