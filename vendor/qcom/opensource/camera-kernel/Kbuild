@@ -30,6 +30,15 @@ ccflags-y += -I$(srctree)/$(src)/include/uapi/camera/
 # Demote to warnings so the build proceeds; track for upstream cleanup.
 ccflags-y += -Wno-error=unused-function
 
+# Phase C: enable the OPLUS camera-extension surface that vendor's Kleaf
+# injects via local_defines + drivers/oplus/cam_sensor_module/* sources
+# (camera_modules.bzl). Required so OEM prebuilt camera_extension.ko's
+# expected symbol CRCs match what our camera.ko actually exports — many
+# cam_sensor_*/camera_io_*/cam_cci_*/struct layouts have
+# #ifdef OPLUS_FEATURE_CAMERA_COMMON blocks.
+ccflags-y += -DOPLUS_FEATURE_CAMERA_COMMON -DFEATURE_ENABLE=1
+# (drivers/oplus/* sources appended after the camera-y := block below.)
+
 
 CONFIG_QCOM_CAMERA_DEBUG := y
 ccflags-y += -DCONFIG_QCOM_CAMERA_DEBUG=1
@@ -370,6 +379,19 @@ camera-$(CONFIG_SPECTRA_VMRM) += \
 	drivers/cam_vmrm/cam_vmrm_interface.o
 
 camera-y += drivers/camera_main.o
+
+# Phase C: bundle the SPECTRA_OPLUS / OPLUS_FEATURE_CAMERA_COMMON sources
+# (camera_modules.bzl's CONFIG_SPECTRA_OPLUS True branch). These appear
+# after the `camera-y := \` reset block above so the entries actually
+# stick. Without them, OEM camera_extension.ko's expected CRCs for
+# cam_sensor_*/camera_io_*/cam_cci_* don't match what camera.ko exports
+# and depmod rejects.
+camera-y += drivers/oplus/cam_sensor_module/cam_module_utils/cam_kevent_fb_custom.o
+camera-y += drivers/oplus/cam_sensor_module/cam_module_utils/cam_trace_custom.o
+camera-y += drivers/oplus/cam_sensor_module/cam_link/oplus_cam_eeprom.o
+camera-y += drivers/oplus/cam_sensor_module/cam_link/oplus_cam_sensor.o
+camera-y += drivers/oplus/cam_sensor_module/cam_link/oplus_cam_ois.o
+camera-y += drivers/oplus/cam_sensor_module/cam_link/oplus_cam_actuator.o
 
 obj-m += camera.o
 BOARD_VENDOR_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/camera.ko
