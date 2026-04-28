@@ -14,12 +14,41 @@ build-system wiring, not source acquisition.
 
 ## Status snapshot
 
-- Kernel: source-built, vmlinux + 188 in-tree `.ko` + Module.symvers
-- 26 of ~40 external modules: source-built today
-- Hybrid path validated structurally (vendor/lineage patches landed,
-  OEM prebuilts merge correctly into depmod staging)
-- 110 unresolved symbols block depmod from accepting the OEM prebuilt
-  set → blocks final image. These are what this plan resolves.
+**Phase A: ✅ DONE** (commit `f62dc1fcc33c kernel: Phase A — restore
+RPMSG/REMOTEPROC/GUNYAH/SCMI/SMEM/ICC framework`). Kernel builds
+cleanly. Symbols `rproc_*`, `rpmsg_*`, `gunyah_*`, `scmi_*`,
+`qcom_smem_state_*`, `qcom_icc_xlate_extended`, plus their helpers
+(qcom_ramdump, qcom_tracepoints, mem-prot, icc-debug,
+qcom_glink_memshare) all resolve. Also re-enabled `KASAN_HW_TAGS`
+(safe alongside KASAN_GENERIC=n) which resolved 12 prebuilts'
+references to `kasan_flag_enabled`.
+
+**Phase B: ✅ DONE** (commits `def93a18 modules: Phase B — wire oplus
+boot helpers + standby_netlink`, `24069d6 sm8850-common: Phase B`,
+`b178c170b3df kernel: Phase B kernel-side support — gh_arm_drv bundle
++ oplus_project.h shim`, `4e196512 kernel.mk: wipe stale oem/`).
+Source-built four oplus extension modules:
+- `oplus_bsp_bootmode.ko` — `get_boot_mode`, `op_is_monitorable_boot`
+- `oplus_bsp_cmdline_parser.ko` — `verified_bootstate`, `serial_no`,
+  `md_buffersize`, plus inter-module helpers
+- `oplus_bsp_boot_projectinfo.ko` — `get_project`, `get_PCB_Version`,
+  `get_eng_version`, `get_Operator_Version`, `get_Modem_Version`
+- `oplus_standby_netlink.ko` — `reset_oplus_smp2p_state`,
+  `get_oplus_smp2p_state_list`, `get_suspend_clk_list`
+
+Plus restored `gh_arm_drv.ko` bundle in `arch/arm64/gunyah/Makefile`
+(referenced by modules.list.msm.canoe and load.recovery).
+
+**Current state:** kernel + 30 source-built externals. Depmod down
+from 110 → 17 unresolved across 4 modules:
+- `camera_extension.ko` (~13 cam_* symbols — Phase C)
+- `oplus_bsp_zram_opt.ko` (`free_zram_is_ok` — needs hybridswap_zram)
+- `oplus_bsp_sched_ext.ko` (`__tracepoint_android_vh_scx_restore_flags`)
+- `ufshcd-crypto-qti.ko` (`qcom_ice_program_key_hwkm`)
+
+**Phases C/D** still resolve the camera and display clusters. Phase B+
+has small follow-ups (zram_opt's hybridswap producer, sched_ext
+tracepoint, ICE crypto helper).
 
 ## Symbol-to-task mapping
 
@@ -70,7 +99,7 @@ manually.
 
 ### Tasks
 
-- [ ] **A.1** — `drivers/rpmsg/Kconfig`: restore `config RPMSG`,
+- [x] **A.1** — `drivers/rpmsg/Kconfig`: restore `config RPMSG`,
   `config RPMSG_NS`, `config RPMSG_CHAR`, `config RPMSG_CTRL`,
   `config RPMSG_VIRTIO`, `config RPMSG_QCOM_GLINK_RPM`. Source:
   upstream Linux 6.12 ACK (android-mainline `drivers/rpmsg/Kconfig`).
@@ -78,29 +107,29 @@ manually.
   `CONFIG_RPMSG=m`, `CONFIG_RPMSG_CHAR=m`, `CONFIG_RPMSG_CTRL=m`,
   `CONFIG_RPMSG_NS=m`.
 
-- [ ] **A.2** — `drivers/remoteproc/Kconfig`: restore `config
+- [x] **A.2** — `drivers/remoteproc/Kconfig`: restore `config
   REMOTEPROC` and `config REMOTEPROC_CDEV`. Pin
   `CONFIG_REMOTEPROC=y` (vmlinux export — vendor prebuilts assume
   in-kernel, not modular).
 
-- [ ] **A.3** — `drivers/virt/gunyah/Kconfig`: restore `config
+- [x] **A.3** — `drivers/virt/gunyah/Kconfig`: restore `config
   GUNYAH`, `config GUNYAH_DRIVERS`, `config GUNYAH_VCPU`. Pin
   `CONFIG_GUNYAH=y` and dependents.
 
-- [ ] **A.4** — `drivers/firmware/arm_scmi/Kconfig`: restore `config
+- [x] **A.4** — `drivers/firmware/arm_scmi/Kconfig`: restore `config
   ARM_SCMI_PROTOCOL`, `config ARM_SCMI_RAW_MODE_SUPPORT` (already
   partial). Pin `CONFIG_ARM_SCMI_PROTOCOL=y`.
 
-- [ ] **A.5** — `drivers/soc/qcom/Kconfig`: restore `config
+- [x] **A.5** — `drivers/soc/qcom/Kconfig`: restore `config
   QCOM_SMEM_STATE` (probably exists — audit suggests the symbol
   *export* is what's missing, may just need `obj-$(CONFIG_QCOM_SMEM)`
   in Makefile to build `smem_state.c`).
 
-- [ ] **A.6** — `drivers/interconnect/qcom/Kconfig`: restore `config
+- [x] **A.6** — `drivers/interconnect/qcom/Kconfig`: restore `config
   INTERCONNECT_QCOM_RPMH` and the helper that exports
   `qcom_icc_xlate_extended`.
 
-- [ ] **A.7** — Build, verify Module.symvers contains
+- [x] **A.7** — Build, verify Module.symvers contains
   `rpmsg_send`, `rproc_alloc`, `gunyah_rm_call`,
   `qcom_smem_state_get`, `scmi_driver_register`,
   `qcom_icc_xlate_extended`. Re-run depmod and confirm the 44 symbols
@@ -132,17 +161,17 @@ vendor only ships `BUILD.bazel` for these. We write Kbuilds.
 
 ### Tasks
 
-- [ ] **B.1** — Write `vendor/oplus/kernel/boot/bootmode/Kbuild` +
+- [x] **B.1** — Write `vendor/oplus/kernel/boot/bootmode/Kbuild` +
   `Makefile` (one module, `oplus_bsp_bootmode.ko`, sources `boot_mode.c`).
   Pattern to follow: `vendor/oplus/kernel/hans/Kbuild` (the rare
   oplus subdir that has both today).
 
-- [ ] **B.2** — Write `vendor/oplus/kernel/boot/cmdline_parser/Kbuild`
+- [x] **B.2** — Write `vendor/oplus/kernel/boot/cmdline_parser/Kbuild`
   + `Makefile` (one module `oplus_bsp_cmdline_parser.ko`, includes
   oplusboot.c + buildvariant.c + oplus_bootargs.c + cdt_integrity.c +
   oplus_charger_present.c + oplus_ftm_mode.c + saupwk.c).
 
-- [ ] **B.3** — Write `vendor/oplus/kernel/boot/oplus_projectinfo/qcom/Kbuild`
+- [x] **B.3** — Write `vendor/oplus/kernel/boot/oplus_projectinfo/qcom/Kbuild`
   + `Makefile` (one module `oplus_bsp_boot_projectinfo.ko`,
   source `oplus_project.c`).
 
@@ -151,7 +180,7 @@ vendor only ships `BUILD.bazel` for these. We write Kbuilds.
   add to ext-modules list as-is. If symbols don't export, audit the
   Kbuild and add `EXPORT_SYMBOL` directives or a wrapper Kbuild.
 
-- [ ] **B.5** — Add to `device/oneplus/sm8850-common/BoardConfigCommon.mk`
+- [x] **B.5** — Add to `device/oneplus/sm8850-common/BoardConfigCommon.mk`
   `TARGET_KERNEL_EXT_MODULES` in this order (no cross-module deps
   between them, but they must all be earlier than any consumer):
 
@@ -162,7 +191,7 @@ vendor only ships `BUILD.bazel` for these. We write Kbuilds.
   oplus/kernel/device_info/device_info \
   ```
 
-- [ ] **B.6** — Build. Confirm `oplus_bsp_bootmode.ko`,
+- [x] **B.6** — Build. Confirm `oplus_bsp_bootmode.ko`,
   `oplus_bsp_cmdline_parser.ko`, `oplus_bsp_boot_projectinfo.ko`,
   `oplus_bsp_device_info.ko` appear in updates/. Run depmod, confirm
   Group A symbols resolve.
