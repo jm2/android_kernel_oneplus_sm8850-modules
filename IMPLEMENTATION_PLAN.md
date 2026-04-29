@@ -58,18 +58,38 @@ deps`, `e8a47255 kernel.mk: respect BOARD_KERNEL_MODULES_LOAD_ALLOW_MISSING`).
 - vendor/lineage/build/tasks/kernel.mk patched to honor ALLOW_MISSING
   for BOOT/RECOVERY/SYSTEM_KERNEL_MODULES checks too.
 
-**Current state — kernel image actually produced:**
+**Phase D: ✅ DONE — `mka kernel` exits 0 with msm_drm.ko source-built**
+(commits `27d0d85f modules: Phase D — wire oplus display extension into
+msm_drm.ko`, `a5337404eea8 kernel: Phase D residuals — altmode-glink +
+panel_event_notifier + qti_pmic_glink`, `ffb37eb sm8850-common: Phase
+D — add msm_drm + helpers to TARGET_KERNEL_EXT_MODULES`).
+
+- display-drivers/msm: bundle 24 `oplus/SM8850/*.c` sources +
+  `oplus/common/trackpoint/oplus_trackpoint_report.c` into msm_drm.ko +
+  the 8 OPLUS_FEATURE_DISPLAY* defines (matches canoe.bzl). Drop the
+  WIP `lineage_oplus_stub.c`. msm_drm.ko now exports
+  `oplus_display_ops`, `oplus_display_trace_enable`, the full
+  `oplus_ofp_*` / `oplus_adfr_*` / `oplus_apuir_*` / temp_compensation
+  / trackpoint_report surfaces.
+- 4 new TARGET_KERNEL_EXT_MODULES entries: device_info,
+  touchpanel_notify (both rewrapped — old "Makefile" was Kbuild-style,
+  now properly split into Kbuild + wrapper Makefile that sets
+  CONFIG_X=m); mm-drivers/hfi_core; display-drivers/msm itself.
+- Three more vendor-stripped Kconfig + Makefile pairs in soc/qcom/:
+  qti_pmic_glink, altmode-glink, panel_event_notifier.
+
+**Current state — kernel image and full source-built display:**
 - `out/target/product/infiniti/kernel` — 39 MB ARM64 Linux Image
-- 225 source-built `.ko` (in-tree + 30 externals)
+- 228 source-built `.ko` (was 225 in Phase C)
 - 568 modules in vendor_dlkm (source-built + OEM prebuilts merged)
 - depmod clean for vendor_dlkm and vendor_ramdisk
+- `msm_drm.ko` source-built with full OPLUS_FEATURE_DISPLAY surface
 
-The remaining work is **Phase D** (oplus display extension —
-`oplus_display_ops`, `oplus_ofp_*`, `oplus_adfr_*`, `oplus_apuir_*`,
-`oplus_display_trace_enable` from `vendor/qcom/opensource/display-drivers/oplus/SM8850/`)
-and Phase F triage. Phase E (gunyah_qtvm) is no longer needed —
-gunyah_qtvm.c is in-tree and Phase A's GUNYAH_QCOM_TRUSTED_VM build
-covers it.
+Phase E retired (gunyah_qtvm covered by Phase A's GUNYAH_QCOM_TRUSTED_VM
+build). **Phase F** is the only remaining task — small triage of
+`oplus_bsp_zram_opt.ko` (free_zram_is_ok producer) and
+`oplus_bsp_sched_ext.ko` (`__tracepoint_android_vh_scx_restore_flags`),
+both currently filtered out of the OEM prebuilt set as dispensable.
 
 For a flashable zip, run `brunch infiniti` from this point.
 
