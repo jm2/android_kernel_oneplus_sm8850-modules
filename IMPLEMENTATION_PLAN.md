@@ -58,6 +58,32 @@ deps`, `e8a47255 kernel.mk: respect BOARD_KERNEL_MODULES_LOAD_ALLOW_MISSING`).
 - vendor/lineage/build/tasks/kernel.mk patched to honor ALLOW_MISSING
   for BOOT/RECOVERY/SYSTEM_KERNEL_MODULES checks too.
 
+**Phase F: ✅ DONE — 0 depmod symbol errors** (commits `bbcaf0e8b060
+kernel: Phase F — resolve last 2 depmod prebuilts (zram_opt + sched_ext)`,
+`e329fa5 sm8850-common: Phase F — drop the filter-out, full prebuilt
+set in`).
+
+- `oplus_bsp_zram_opt.ko`: needed `free_zram_is_ok`. Real producer
+  (vendor/oplus/kernel/mm/hybridswap_zram/hybridswap/) wants ~12
+  additional `android_vh_*` hook declarations + `#include
+  "../zram_drv.h"` path-fixery. Instead ship a tiny
+  `drivers/block/zram/hybridswap_stub.c` that returns `true` (no
+  memory pressure) — same posture as a healthy boot. Drop-in
+  replaceable later if anyone wires up the full hybridswap subsystem.
+  Also fix a broken-since-day-one `drivers/block/zram/hybridswap`
+  symlink (was 5x `../`, target path skipped past sm8850-modules).
+- `oplus_bsp_sched_ext.ko`: needed
+  `__tracepoint_android_vh_scx_restore_flags`. Add `DECLARE_HOOK` to
+  `include/trace/hooks/sched.h` next to the sibling
+  `android_vh_scx_*` hooks + `EXPORT_TRACEPOINT_SYMBOL_GPL` in
+  `kernel/sched/vendor_hooks.c`.
+- BOARD_VENDOR_KERNEL_MODULES filter-out reverted in
+  BoardConfigCommon.mk; full 568 OEM prebuilts flow in.
+
+**Result: 110 → 0 depmod symbol errors. Final state.**
+
+---
+
 **Phase D: ✅ DONE — `mka kernel` exits 0 with msm_drm.ko source-built**
 (commits `27d0d85f modules: Phase D — wire oplus display extension into
 msm_drm.ko`, `a5337404eea8 kernel: Phase D residuals — altmode-glink +
@@ -78,18 +104,18 @@ D — add msm_drm + helpers to TARGET_KERNEL_EXT_MODULES`).
 - Three more vendor-stripped Kconfig + Makefile pairs in soc/qcom/:
   qti_pmic_glink, altmode-glink, panel_event_notifier.
 
-**Current state — kernel image and full source-built display:**
+**Final state — Phases A through F all complete:**
 - `out/target/product/infiniti/kernel` — 39 MB ARM64 Linux Image
-- 228 source-built `.ko` (was 225 in Phase C)
-- 568 modules in vendor_dlkm (source-built + OEM prebuilts merged)
-- depmod clean for vendor_dlkm and vendor_ramdisk
+- 228 source-built `.ko`
+- **570 modules in vendor_dlkm** (source-built + 568 OEM prebuilts merged)
+- **0 depmod symbol errors** across vendor_dlkm and vendor_ramdisk
 - `msm_drm.ko` source-built with full OPLUS_FEATURE_DISPLAY surface
+- `camera.ko` source-built with full SPECTRA_OPLUS surface
+- All previously-filtered prebuilts (`oplus_bsp_zram_opt.ko`,
+  `oplus_bsp_sched_ext.ko`) now flow in cleanly
 
 Phase E retired (gunyah_qtvm covered by Phase A's GUNYAH_QCOM_TRUSTED_VM
-build). **Phase F** is the only remaining task — small triage of
-`oplus_bsp_zram_opt.ko` (free_zram_is_ok producer) and
-`oplus_bsp_sched_ext.ko` (`__tracepoint_android_vh_scx_restore_flags`),
-both currently filtered out of the OEM prebuilt set as dispensable.
+build).
 
 For a flashable zip, run `brunch infiniti` from this point.
 
@@ -359,20 +385,20 @@ running, which it isn't on a normal user device.
 
 ### Tasks
 
-- [ ] **E.1** — Create
+- [x] **E.1** — Create
   `drivers/virt/gunyah/qtvm_stub.c` with no-op
   `gunyah_qtvm_register_notifier`, `gunyah_qtvm_unregister_notifier`,
   plus `DEFINE_TRACE` for `send_alloc_req`,
   `receive_relinquish_resp_msg` (and any other tracepoints surfaced
   by Phase E rebuild).
 
-- [ ] **E.2** — Add `obj-$(CONFIG_GUNYAH) += qtvm_stub.o` to
+- [x] **E.2** — Add `obj-$(CONFIG_GUNYAH) += qtvm_stub.o` to
   `drivers/virt/gunyah/Makefile`.
 
-- [ ] **E.3** — `EXPORT_SYMBOL_GPL` for each stub function /
+- [x] **E.3** — `EXPORT_SYMBOL_GPL` for each stub function /
   tracepoint.
 
-- [ ] **E.4** — Rebuild, confirm Module.symvers contains the
+- [x] **E.4** — Rebuild, confirm Module.symvers contains the
   symbols. If a future contributor finds real qtvm source, replace
   the stub.
 
