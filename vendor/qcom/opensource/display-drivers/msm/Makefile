@@ -15,6 +15,26 @@ KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../../mm-drivers/sync_fence/Module.s
 KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../../mm-drivers/msm_ext_display/Module.symvers)
 KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../../mm-drivers/hw_fence/Module.symvers)
 KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../../securemsm-kernel/Module.symvers)
+
+# Phase D: oplus display extension calls into Phase B oplus modules:
+#   get_project / get_PCB_Version / get_eng_version / get_Operator_Version
+#     ← oplus_bsp_boot_projectinfo.ko
+#   get_boot_mode / op_is_monitorable_boot
+#     ← oplus_bsp_bootmode.ko
+#   verified_bootstate / serial_no / cmdline parser helpers
+#     ← oplus_bsp_cmdline_parser.ko
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../../../../oplus/kernel/boot/oplus_projectinfo/qcom/Module.symvers)
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../../../../oplus/kernel/boot/bootmode/Module.symvers)
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../../../../oplus/kernel/boot/cmdline_parser/Module.symvers)
+
+# Phase D: msm_drm.ko consumes mmrm-driver's mmrm_client_register / etc.
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../../mmrm-driver/Module.symvers)
+# hfi_core_*: consumed by msm_drm.ko (HFI = Hardware Firmware Interface).
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../../mm-drivers/hfi_core/Module.symvers)
+# register_device_proc: oplus device_info module.
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../../../../oplus/kernel/device_info/device_info/Module.symvers)
+# touchpanel_event_register_notifier: oplus touchpanel notifier.
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../../../../oplus/kernel/touchpanel/touchpanel_notify/Module.symvers)
 export KBUILD_EXTRA_SYMBOLS
 
 all: modules

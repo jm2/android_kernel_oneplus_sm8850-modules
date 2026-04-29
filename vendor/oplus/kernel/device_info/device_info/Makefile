@@ -1,3 +1,7 @@
-ccflags-$(CONFIG_MTK_PLATFORM) += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/
-ccflags-$(CONFIG_MTK_PLATFORM) += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
-obj-$(CONFIG_OPLUS_DEVICE_IFNO)	+=  device_info.o
+# SPDX-License-Identifier: GPL-2.0-only
+KBUILD_OPTIONS += CONFIG_OPLUS_DEVICE_IFNO=m
+
+KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
+M ?= $(shell pwd)
+modules modules_install clean:
+	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(KBUILD_OPTIONS) $(@)

@@ -141,6 +141,18 @@ ccflags-y += -I$(DISPLAY_ROOT)/oplus/common
 ccflags-y += -Wno-error=uninitialized
 ccflags-y += -Wno-error=default-const-init-field-unsafe
 
+# Phase D: OPLUS display extension feature set (matches canoe.bzl
+# config_options under #ifdef OPLUS_FEATURE_DISPLAY). Each gates a
+# block of oplus/SM8850/*.c sources added to msm_drm-y below.
+ccflags-y += -DOPLUS_FEATURE_DISPLAY
+ccflags-y += -DOPLUS_FEATURE_DISPLAY_ADFR
+ccflags-y += -DOPLUS_FEATURE_DISPLAY_HIGH_PRECISION
+ccflags-y += -DOPLUS_FEATURE_DISPLAY_TEMP_COMPENSATION
+ccflags-y += -DOPLUS_FEATURE_DISPLAY_ONSCREENFINGERPRINT
+ccflags-y += -DOPLUS_TRACKPOINT_REPORT
+ccflags-y += -DOPLUS_FEATURE_APDMR
+ccflags-y += -DOPLUS_FEATURE_AP_UIR_DIMMING
+
 ifeq ($(call cc-option-yn, -Wmaybe-uninitialized),y)
 EXTRA_CFLAGS += -Wmaybe-uninitialized
 endif
@@ -257,7 +269,6 @@ msm_drm-$(CONFIG_DRM_MSM_SDE) += sde/sde_crtc.o \
 				 sde_dbg.o \
 				 sde_dbg_evtlog.o \
 				 sde_io_util.o \
-				 lineage_oplus_stub.o \
 				 sde_vm_event.o \
 				 sde/sde_hw_reg_dma_v1_color_proc.o \
 				 sde/sde_hw_color_proc_v4.o \
@@ -382,5 +393,36 @@ msm_drm-$(CONFIG_DRM_MSM) += msm_atomic.o \
 			     msm_gem_vma.o \
 			     msm_smmu.o \
 			     msm_prop.o
+
+# Phase D: OPLUS_FEATURE_DISPLAY source set (matches
+# display_modules.bzl OPLUS_FEATURE_DISPLAY block under canoe.bzl).
+# Provides oplus_display_ops, oplus_display_trace_enable,
+# get_eng_version (note: also exported by oplus_bsp_boot_projectinfo
+# from Phase B — modpost uses the in-bundle definition over external),
+# plus the OFP / ADFR / APUIR / temp_compensation / trackpoint_report
+# functions consumed by the OEM camera_extension and panel drivers.
+msm_drm-y += ../oplus/SM8850/oplus_display_utils.o \
+	     ../oplus/SM8850/oplus_display_sysfs_attrs.o \
+	     ../oplus/SM8850/oplus_display_dc_diming.o \
+	     ../oplus/SM8850/oplus_display_ffl.o \
+	     ../oplus/SM8850/oplus_display_device.o \
+	     ../oplus/SM8850/oplus_display_proc.o \
+	     ../oplus/SM8850/oplus_display_power.o \
+	     ../oplus/SM8850/oplus_display_effect.o \
+	     ../oplus/SM8850/oplus_display_device_ioctl.o \
+	     ../oplus/SM8850/oplus_display_bl.o \
+	     ../oplus/SM8850/oplus_display_interface.o \
+	     ../oplus/SM8850/oplus_display_pwm.o \
+	     ../oplus/SM8850/oplus_display_parse.o \
+	     ../oplus/SM8850/oplus_display_panel_cmd.o \
+	     ../oplus/SM8850/oplus_display_ext.o \
+	     ../oplus/SM8850/oplus_display_esd.o \
+	     ../oplus/SM8850/oplus_bl_ic_ktz8868.o \
+	     ../oplus/SM8850/oplus_display_dfte.o \
+	     ../oplus/SM8850/oplus_adfr.o \
+	     ../oplus/SM8850/oplus_apuirdim.o \
+	     ../oplus/SM8850/oplus_display_temp_compensation.o \
+	     ../oplus/SM8850/oplus_onscreenfingerprint.o \
+	     ../oplus/common/trackpoint/oplus_trackpoint_report.o
 
 CDEFINES += -DBUILD_TIMESTAMP=\"$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')\"

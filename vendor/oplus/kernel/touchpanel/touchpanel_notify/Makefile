@@ -1,4 +1,7 @@
-oplus_bsp_tp_notify-y := touchpanel_event_notify.o
+# SPDX-License-Identifier: GPL-2.0-only
+KBUILD_OPTIONS += CONFIG_TOUCHPANEL_NOTIFY=m
 
-#module: oplus_bsp_tp_notify.ko
-obj-$(CONFIG_TOUCHPANEL_NOTIFY) += oplus_bsp_tp_notify.o
+KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
+M ?= $(shell pwd)
+modules modules_install clean:
+	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(KBUILD_OPTIONS) $(@)
