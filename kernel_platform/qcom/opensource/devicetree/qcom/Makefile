@@ -90,7 +90,31 @@ canoe-dtb-$(CONFIG_ARCH_MALABAR) += \
 	$(call add-overlays,$(NOAPQ_MALABAR_BOARDS), $(MALABAR_BASE_DTB))
 canoe-overlays-dtb-$(CONFIG_ARCH_MALABAR) += $(NOAPQ_MALABAR_BOARDS) $(MALABAR_BASE_DTB)
 
-dtb-y += $(canoe-dtb-y) $(canoe-overlays-dtb-y)
+# jm2: drop $(canoe-dtb-y) -- the fdt_overlay-merged base x board matrix
+# for non-infiniti variants (canoe-cdp-*, canoe-mtp-*, canoe-qrd-*,
+# canoe-rcm-*, canoe-atp-*, alor-*). Those overlays have stale node refs
+# and fail with FDT_ERR_NOTFOUND at DTC time, and we don't ship those
+# board variants. Keep $(canoe-overlays-dtb-y) so the base DTBs and
+# overlay DTBOs still build standalone; merge_dtbs.py performs the
+# infiniti-specific base x techpack merging at Stage C via
+# msm-id/board-id/oplus,project-id matching.
+dtb-y += $(canoe-overlays-dtb-y)
+
+# jm2: with $(canoe-dtb-y) dropped, base-dtb-y (the kernel's auto-derived
+# list of bases that need DTC's -@ symbol export so overlays can resolve
+# &phandle references via __fixups__/__symbols__) ends up empty. Without
+# __symbols__, fdtoverlay (and merge_dtbs.py downstream) fails on every
+# overlay attempt with FDT_ERR_NOTFOUND. Add -@ explicitly per-target
+# for the canoe SoC bases via DTC_FLAGS_<stem>, the per-target hook
+# scripts/Makefile.lib:379 already honors.
+DTC_FLAGS_canoe         := -@
+DTC_FLAGS_canoe-v2      := -@
+DTC_FLAGS_canoe-tp      := -@
+DTC_FLAGS_canoe-tp-v2   := -@
+DTC_FLAGS_canoep        := -@
+DTC_FLAGS_canoep-v2     := -@
+DTC_FLAGS_canoep-tp     := -@
+DTC_FLAGS_canoep-tp-v2  := -@
 
 YUPIK_BASE_DTB += yupik-iot.dtb katmai.dtb katmai-fp2.dtb katmai-fp2p5.dtb katmai-fp3.dtb
 YUPIK_APQ_BASE_DTB += yupikp-iot.dtb katmaip.dtb katmaip-fp2.dtb katmaip-fp2p5.dtb katmaip-fp3.dtb
