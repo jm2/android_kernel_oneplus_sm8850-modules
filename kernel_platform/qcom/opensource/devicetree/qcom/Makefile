@@ -116,6 +116,23 @@ DTC_FLAGS_canoep-v2     := -@
 DTC_FLAGS_canoep-tp     := -@
 DTC_FLAGS_canoep-tp-v2  := -@
 
+# jm2: source-composed "fat" SoC bases for canoe variants. Each *-fat.dts
+# #includes canoe[-v2|-tp|-tp-v2].dtsi plus the base-techpack .dtsi files
+# the OEM bakes into their canoe.dtb (audio / sde / camera / eva / vidc /
+# gpu / dsp[v2 only] / ipa / synx / hw_fence / hfi_core / mmrm[+test on
+# v1]). Verified label-equivalent to the OEM oracle (1922-1925/1923-1926
+# label match across variants; missing label is `qcom_qbt`, the legacy
+# Qualcomm fingerprint binding for `qbt_handler.ko` which jm2 doesn't
+# build -- OnePlus 15 uses oplus_bsp_uff_fp_driver.ko via the dtbo
+# overlay instead). Architectural note: ABL applies dtbo overlays onto
+# these bases at boot; we do NOT compose the project-specific or
+# techpack-overlay content into dtb.img -- that lives in dtbo.img.
+dtb-y += canoe-fat.dtb canoe-v2-fat.dtb canoe-tp-fat.dtb canoe-tp-v2-fat.dtb
+DTC_FLAGS_canoe-fat        := -@
+DTC_FLAGS_canoe-v2-fat     := -@
+DTC_FLAGS_canoe-tp-fat     := -@
+DTC_FLAGS_canoe-tp-v2-fat  := -@
+
 YUPIK_BASE_DTB += yupik-iot.dtb katmai.dtb katmai-fp2.dtb katmai-fp2p5.dtb katmai-fp3.dtb
 YUPIK_APQ_BASE_DTB += yupikp-iot.dtb katmaip.dtb katmaip-fp2.dtb katmaip-fp2p5.dtb katmaip-fp3.dtb
 

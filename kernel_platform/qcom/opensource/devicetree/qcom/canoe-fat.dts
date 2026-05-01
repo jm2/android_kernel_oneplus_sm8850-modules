@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * jm2: SoC-base + base-techpack composition for canoe (sm8850).
+ *
+ * The OEM ships canoe.dtb with audio / display-base / camera-base /
+ * video-base / eva-base nodes pre-merged in (via DTC source-compose
+ * in their Bazel build). Our standalone canoe.dts (which only
+ * #include's canoe.dtsi) misses those, so dtbo.img overlays that
+ * reference labels like &lpass_cdc, &cam_cpas, &smmu_sde_unsec fail
+ * to resolve at boot. This wrapper bakes in the same 5 SoC-level
+ * .dtsi files OEM does, producing a "fat" canoe.dtb whose __symbols__
+ * matches the OEM's 1923-label oracle exactly.
+ *
+ * Project-specific overrides (infiniti-NNNNN-*) and most board-level
+ * techpack overlays stay in dtbo.img -- ABL applies them at boot.
+ */
+
+/dts-v1/;
+
+#include "canoe.dtsi"
+
+/* Base techpack subsystems baked into the SoC dtb (board-id <0 0>). */
+#include "../audio-devicetree/canoe-audio.dtsi"
+#include "../display-devicetree/display/canoe-sde.dtsi"
+#include "../camera-devicetree/canoe-camera.dtsi"
+#include "../eva-devicetree/canoe-eva.dtsi"
+#include "../video-devicetree/canoe-vidc.dtsi"
+#include "../graphics-devicetree/gpu/canoe-gpu.dtsi"
+#include "../data-devicetree/canoe-ipa.dtsi"
+#include "../synx-devicetree/synx/canoe-synx.dtsi"
+#include "../mm-devicetree/hw_fence/canoe-hw-fence.dtsi"
+#include "../mm-devicetree/hfi_core/canoe-hfi-core.dtsi"
+#include "../mmrm-devicetree/canoe/canoe-mmrm.dtsi"
+#include "../mmrm-devicetree/canoe/canoe-mmrm-test.dtsi"
+
+/*
+ * Note: OEM canoe.dtb has one extra label, qcom_qbt → /soc/qcom,qbt_handler
+ * (fingerprint sensor). The defining .dtsi is in vendor/qcom/opensource/
+ * fingerprint/ which jm2 doesn't ship -- qbt_handler.ko isn't in our
+ * kernel module set, so nothing would probe the node anyway. Diff
+ * intentionally accepts this 1-label gap (1922/1923).
+ */
+
+/ {
+	model = "Qualcomm Technologies, Inc. Canoe SoC";
+	compatible = "qcom,canoe";
+	qcom,board-id = <0 0>;
+};

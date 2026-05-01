@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * jm2: SoC-base + base-techpack composition for canoe-tp (sm8850 alt
+ * thermal profile, v1). Sister of canoe-fat.dts. Uses canoe-tp.dtsi
+ * (which transitively #includes canoe.dtsi). Same v1 techpack set as
+ * canoe-fat.dts. See canoe-fat.dts for the architectural rationale.
+ */
+
+/dts-v1/;
+
+#include "canoe-tp.dtsi"
+
+#include "../audio-devicetree/canoe-audio.dtsi"
+#include "../display-devicetree/display/canoe-sde.dtsi"
+#include "../camera-devicetree/canoe-camera.dtsi"
+#include "../eva-devicetree/canoe-eva.dtsi"
+#include "../video-devicetree/canoe-vidc.dtsi"
+#include "../graphics-devicetree/gpu/canoe-gpu.dtsi"
+#include "../data-devicetree/canoe-ipa.dtsi"
+#include "../synx-devicetree/synx/canoe-synx.dtsi"
+#include "../mm-devicetree/hw_fence/canoe-hw-fence.dtsi"
+#include "../mm-devicetree/hfi_core/canoe-hfi-core.dtsi"
+#include "../mmrm-devicetree/canoe/canoe-mmrm.dtsi"
+#include "../mmrm-devicetree/canoe/canoe-mmrm-test.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Canoe Alt. Thermal Profile SoC";
+	compatible = "qcom,canoe";
+	qcom,board-id = <0 0>;
+};
