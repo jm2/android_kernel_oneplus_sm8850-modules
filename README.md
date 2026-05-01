@@ -112,6 +112,68 @@ These are stable-from-prebuilt today; the same six-phase pattern
 add `KBUILD_EXTRA_SYMBOLS`, surface any in-tree dependencies) would
 extend source-build to them if needed.
 
+## Phase G — DTB source-compose for canoe SoC bases
+
+vendor's Bazel build composes per-SoC fat .dtbs at DTC source time
+(canoe[-v2|-tp|-tp-v2].dtsi + audio/sde/camera/eva/vidc/gpu/[dsp]/ipa/
+synx/hw_fence/hfi_core/mmrm techpack .dtsi files all #included into
+one /dts-v1/ wrapper). Kleaf wires this implicitly via the `kernel_dts`
+rule. To match under plain make, this fork carries:
+
+- **`subdir-y += qcom`** restored in
+  `kernel_platform/qcom/opensource/devicetree/Makefile`
+  (was disabled by an OPLUS_DTS_OVERLAY block).
+- **14 symlinks** under `kernel_platform/qcom/opensource/devicetree/`
+  pointing at the corresponding `vendor/qcom/opensource/<X>-devicetree`
+  subprojects (audio / bt / camera / data / display / dsp / eSE / eva /
+  graphics / mm / mmrm / nfc / synx / video). With these, a single
+  in-tree `make dtbs` traverses qcom/, oplus/, and all 14 techpacks
+  in one shot — no `M=` external-module invocations needed.
+  The `subdir-y += $(foreach ...)` line in the same Makefile uses
+  `$(wildcard $(d)/Kbuild)` guards so missing trees silently skip.
+- **`canoe-{,v2,tp,tp-v2}-fat.dts`** in
+  `kernel_platform/qcom/opensource/devicetree/qcom/`. Each is a
+  /dts-v1/ wrapper that #includes its SoC .dtsi plus the SoC-level
+  techpack .dtsi files OEM bakes into their dtb.img. Adds them to
+  `dtb-y` with per-target `DTC_FLAGS_*-fat := -@` so DTC emits
+  `__symbols__` (required for ABL's overlay phandle resolution).
+  Validated label-equivalent to OEM oracle DTBs extracted from
+  stock vendor_boot.img: 1922-1925/1923-1926 match per variant
+  (only `qcom_qbt` missing — intentional, see fingerprint section).
+- **`qcom/Makefile` drops `$(canoe-dtb-y)`** from `dtb-y`. That
+  variable is the fdt_overlay-merged base × board matrix for
+  non-infiniti boards (canoe-cdp/mtp/qrd/rcm/atp + alor variants);
+  those overlays have stale node refs and fail with
+  `FDT_ERR_NOTFOUND` at DTC time, and we don't ship those boards.
+  `$(canoe-overlays-dtb-y)` still produces the bases + .dtbo files
+  standalone for dtbo.img packing. Per-target `DTC_FLAGS_canoe* := -@`
+  on the bases ensures `__symbols__` emission even when the
+  base-dtb-y auto-derived list ends up empty.
+
+The fingerprint label gap: OEM canoe.dtb has one extra label
+`qcom_qbt → /soc/qcom,qbt_handler` for the legacy `qbt_handler.ko`
+Qualcomm Biometric Touch driver. jm2 doesn't ship qbt_handler.ko
+(not in our `TARGET_KERNEL_EXT_MODULES`), and OnePlus 15 actually
+uses the modern OPLUS UFF stack (`oplus_bsp_uff_fp_driver.ko`,
+binds `oplus,fp_spi`) defined in `oplus-uff-24831.dtsi` which is
+part of the dtbo overlay (`infiniti-24831-canoe-overlay.dtbo`) —
+ABL applies it at boot. So the missing label is a no-op for our
+build.
+
+Architectural rationale: ABL is the correct layer for overlay
+resolution (correct symbol-propagating implementation that chains
+overlays). Build-time tools (`fdtoverlay`, `fdtoverlaymerge`,
+`ufdt_apply_overlay`) all share a `__symbols__`-propagation gap
+that breaks chained-techpack devices (every post-SM8350 Qualcomm
+SoC). OEM doesn't compose at build time either — they ship bases
+in dtb.img and project + techpack overlays in dtbo.img and let
+ABL apply at boot. This work mirrors that.
+
+Companion changes in the device tree:
+`device/oneplus/sm8850-common/{BoardConfigCommon.mk,dtbimg.mk,
+dtboimg.mk,tools/dtb/}`. See that repo's README for the recipe and
+oracle-diff tooling.
+
 ## Phases A–F — what changed and why
 
 Each phase resolved a slice of the 110 unresolved-depmod-symbol set
