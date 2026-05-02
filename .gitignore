@@ -1,0 +1,31 @@
+# Top-level .gitignore for the modules tree.
+#
+# Patterns are scoped to standard kbuild build outputs that get
+# generated when `mka kernel` builds an external module via
+# `make M=<this-dir>`. None of these belong in the source tree;
+# all are regenerable from the .c/.h sources and the kernel.
+#
+# Confirmed against `git ls-files` at landing time: 0 currently-
+# tracked files match these patterns.
+
+# Compiled object files
+*.o
+*.o.d
+
+# Per-module artifacts produced by modpost
+*.ko
+*.mod
+*.mod.c
+*.mod.o
+
+# Kbuild metadata files
+Module.symvers
+modules.order
+
+# Hidden command files kbuild writes alongside outputs
+# (e.g. `.foo.o.cmd`, `.bar.ko.cmd`, `.modules.order.cmd`)
+.*.cmd
+
+# Don't ignore non-build dotfiles — only kbuild's `.<basename>.cmd`
+# pattern. `.gitignore`, `.gitattributes`, etc. stay tracked because
+# their basename doesn't match `*.cmd`.
