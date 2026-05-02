@@ -104,6 +104,22 @@ generating any future baseline CSV.
 
 ## Cuttlefish / QEMU runtime-validation gate
 
+**Status (2026-05-02 update):** **Lighter-weight substitute adopted.**
+`tools/jm2/dt_consistency_check.py` (v1, landed `e79fb87` + glob fix
+`4b0ff4c`) catches the highest-value class of bugs at static-analysis
+cost. First run caught an MVB-blocker (5 missed canoe clock
+controllers — sub-wave 2A.5 corrective). Cuttlefish/QEMU is no longer
+the only path to runtime-validation; it stays deferred unless the
+static check turns out to catch insufficient bugs as Wave 2 progresses.
+
+**Concrete revisit triggers:**
+- Phase 6 hardware test surfaces ≥3 latent runtime bugs the DT-check
+  missed
+- Sub-wave 2D-2I lands a class of bug the DT-check can't reason about
+  (e.g., regulator-supply name mismatches, DMA buffer alignment)
+- A wave's brunch-closeout produces a structurally-valid ROM that
+  fails to boot in a way that costs more than 1 day to root-cause
+
 **Surfaced:** 2026-05-02 (Opus Web post-2A review).
 
 **Context:**

@@ -445,6 +445,86 @@ calibrate whether this projection holds.
 
 ---
 
+## Sub-wave 2C pre-flight — audio-DT consistency check + scope re-derivation
+
+Per Opus Web's post-2A.5 reasoning ("the agent's audio prep work used
+the same kind of manual analysis that produced the incomplete clock
+cluster scope; running the new tool on audio-DT is just following
+the rule the agent just established"), the audio scope was
+re-derived with the array-aware approach AND `dt_consistency_check.py`
+was run against canoe-audio.dtsi. Both before any 2C wire-up commits.
+
+### Audio scope re-derivation (array-aware)
+
+Re-ran the Wave 2A-style scope analysis on canoe-audio.dtsi using
+the array-aware multi-phandle Python regex (the same approach now
+in `dt_consistency_check.py`). Compared against the original manual
+inventory:
+
+| Class | Original count | Re-derived count | Match? |
+|---|---:|---:|---|
+| Unique phandle refs | 5 | 5 | ✅ |
+| `clocks = <&...>` array phandles | 2 | 2 | ✅ |
+| Driver-binding compatibles | 13 | 13 | ✅ |
+| Provider labels defined in file | 22 | 22 | ✅ |
+
+**No scope error.** Audio DT's structure is dominated by
+`compatible = "qcom,..."` driver-bindings rather than multi-phandle
+`clocks = <...>` arrays — different idiom from clocks DT, naturally
+unaffected by the single-phandle regex bug that bit 2A.
+
+### dt_consistency_check.py against canoe-audio.dtsi
+
+```
+$ python3 tools/jm2/dt_consistency_check.py \
+    --dt vendor/qcom/opensource/audio-devicetree/canoe-audio.dtsi \
+    --source-dir kernel/oneplus/sm8850/drivers \
+    --source-dir kernel/oneplus/sm8850-modules/vendor/qcom/opensource \
+    --source-dir kernel/oneplus/sm8850-modules/vendor/oplus/kernel \
+    --source-built-glob 'out/.../updates/*.ko ...' \
+    --oem-prebuilt-glob 'device/oneplus/infiniti-kernel/*.ko'
+
+# summary:
+#   clean: 0
+#   oem-only-load-fails: 0
+#   no-driver-found: 3
+#   no-compatible: 2
+```
+
+**0 oem-only-load-fails** = no MVB-blockers in the consumer-
+references-loadable-producer dimension. The 5 audio phandles
+(apps_smmu, audio_cnss_resv_region, lpass_audio_hw_vote,
+lpass_core_hw_vote, msm_audio_ion) are either:
+- Defined IN canoe-audio.dtsi as self-providers (lpass_audio_hw_vote,
+  lpass_core_hw_vote, msm_audio_ion, audio_cnss_resv_region)
+- Referenced from canoe.dtsi as external mainline drivers
+  (apps_smmu — Qualcomm SMMU)
+
+### Tool gap (v1 limitation explicitly named)
+
+`dt_consistency_check.py` v1 only handles `<&phandle>` consumer
+references. It does NOT handle `compatible = "qcom,..."` driver-
+binding references. Audio's dominant pattern is the latter
+(13 compatibles), so the tool's clean signal here is **structurally
+limited, not load-bearing**.
+
+The 2C scope-correctness for audio rests on:
+1. The earlier audio-kernel emission inventory (canoeauto.conf
+   missing → zero modules emit) — load-bearing finding
+2. The 13-compatibles inventory from `compatible = "..."` grep —
+   load-bearing finding
+3. dt_consistency_check.py phandle-ref check — confirms no
+   *additional* hidden phandle scope, but doesn't bless the
+   compatibles list
+
+A v2 of the tool should add compatible-driver mapping support
+(grep `.compatible = "X"` across source dirs, find which .ko
+implements X, classify same as phandle case). Documented as
+deferred-tool-improvement for after the first non-clock sub-wave
+exercises the gap.
+
+---
+
 ## Sub-wave 2C kickoff — audio-kernel emission inventory (FIRST ACTION)
 
 Before any wire-up commits in 2C, resolve the structural question
