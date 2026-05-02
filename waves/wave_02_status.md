@@ -685,6 +685,92 @@ not deferred work).
 
 ---
 
+## Sub-wave 2C — audio cluster wire-up (COMPLETE pending brunch closeout)
+
+### Approach (post-inventory, outcome ≈ 1)
+
+Per the inventory finding (audio-kernel framework wired but no
+canoe-specific config glue), authored:
+- `audio-kernel/config/canoeauto.conf` — sed PINEAPPLE→CANOE on
+  pineappleauto.conf (only `CONFIG_SND_SOC_PINEAPPLE` → `CONFIG_SND_SOC_CANOE`
+  changes; rest are SoC-agnostic)
+- `audio-kernel/config/canoeautoconf.h` — same name sub on the
+  C-header version
+- 11 sub-Kbuilds (`dsp/`, `soc/`, `ipc/`, `asoc/`, `asoc/codecs/`,
+  + 6 codec-specific dirs) — added `ifeq ($(CONFIG_ARCH_CANOE), y)`
+  blocks alongside the existing PINEAPPLE blocks. Generated via Python
+  script that copy-replicates each PINEAPPLE block.
+
+### One iteration to v2 (HDMI deferral)
+
+v1 build failed on `msm_hdmi_codec_rx.c` `#include <msm_ext_display.h>`
+— audio-kernel's Kbuild doesn't wire the include path to the
+mm-drivers/msm_ext_display external. Tracked as a deferred follow-up
+(not boot-critical; HDMI audio is a tail feature).
+
+v2 commented out `CONFIG_SND_SOC_MSM_HDMI_CODEC_RX` in both
+canoeauto.conf and canoeautoconf.h, build passed.
+
+### Modules emitted (30)
+
+Across `updates/dsp/`, `updates/soc/`, `updates/ipc/`,
+`updates/asoc/codecs/`, `updates/asoc/codecs/lpass-cdc/`,
+`updates/asoc/codecs/{wcd938x,wcd939x,wsa883x,wsa884x}/`:
+
+```
+adsp_loader_dlkm        audio_pkt_dlkm          audio_prm_dlkm
+audpkt_ion_dlkm         gpr_dlkm                lpass_cdc_dlkm
+lpass_cdc_rx_macro_dlkm lpass_cdc_tx_macro_dlkm lpass_cdc_va_macro_dlkm
+lpass_cdc_wsa_macro_dlkm lpass_cdc_wsa2_macro_dlkm mbhc_dlkm
+pinctrl_lpi_dlkm        q6_dlkm                 q6_notifier_dlkm
+q6_pdr_dlkm             snd_event_dlkm          spf_core_dlkm
+stub_dlkm               swr_ctrl_dlkm           swr_dlkm
+swr_dmic_dlkm           swr_haptics_dlkm        wcd938x_dlkm
+wcd938x_slave_dlkm      wcd939x_dlkm            wcd939x_slave_dlkm
+wcd9xxx_dlkm            wcd_core_dlkm           wsa883x_dlkm
+wsa884x_dlkm
+```
+
+### Validation (representative subset)
+
+| Module | __versions | CRC match | KMI clean | Verdict |
+|---|---:|---|---:|---|
+| q6_dlkm | 7 | 7/7 | 100% | pass |
+| lpass_cdc_dlkm | 82 | 82/82 | 98.78% | pass |
+| lpass_cdc_rx_macro_dlkm | 93 | 93/93 | 100% | pass |
+| wcd939x_dlkm | 131 | 131/131 | 99.24% | pass |
+| gpr_dlkm | 51 | 51/51 | 100% | pass |
+| swr_dlkm | 42 | 42/42 | 100% | pass |
+
+All `vermagic_release: 6.12.23-4k-g59bd74c45df9` (matches running
+kernel). `validate_module.sh` exits 0.
+
+### EXPORT_SYMBOL ladder STILL not exercised
+
+Fourth sub-wave (Wave 1 + 2A + 2A.5 + 2C) where the ladder was
+predicted to fire and didn't. Phase F/H whitelist coverage extends
+to ALSA/ASoC framework + qcom audio framework + lpass-cdc internals
++ WCD codecs + SoundWire — wider than projection assumed.
+
+### Effort vs projection
+
+| Sub-wave | Projection | Actual |
+|---|---|---|
+| 2A | 3–5 days, 5–15 EXPORTs | ~45 min, 0 EXPORTs |
+| 2A.5 | n/a (corrective) | ~30 min, 0 EXPORTs |
+| 2C | 2–4 hours, 5–15 EXPORTs | ~1 hour, 0 EXPORTs |
+
+Per calibration discipline: NOT yet updating Wave 2 timeline. Need
+≥2 more sub-wave data points from genuinely heterogeneous content
+(2D oplus_bsp_*, 2H oplus_network) before priors can be recalibrated.
+
+### Commit
+
+modules `05aecd9a`. No companion device-tree change (audio-kernel
+already in TARGET_KERNEL_EXT_MODULES).
+
+---
+
 ## Sub-wave 2B onwards — heterogeneous module backlog
 
 After the clock cluster lands, Wave 2 moves to the OEM-prebuilt-only
