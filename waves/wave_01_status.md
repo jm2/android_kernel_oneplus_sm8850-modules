@@ -299,15 +299,23 @@ but the work will be lumpy, not uniform. Plan accordingly.
 
 ## Open follow-ups
 
-- **Push the 11 unpushed jm2 commits.** Latest per fork:
-  - `kernel/oneplus/sm8850`: `6fc93520fed4` (Phase H), tag
-    `phase-h-wave-1`
-  - `kernel/oneplus/sm8850-modules`: `52fca02` (DEFERRED_FOLLOWUPS),
-    tag `wave-1`
-  - `device/oneplus/sm8850-common`: `047a8dd` (wave 1 device wiring),
-    tag `wave-1`
-  - 11 commits + 3 tags awaiting push (Opus Web flagged accumulating
-    risk; push after every wave at minimum).
+- ~~**Push the 11 unpushed jm2 commits.**~~
+  RESOLVED 2026-05-02 — user pushed all three forks. State verified
+  by `git log @{u}..HEAD` empty across all three repos. Tags
+  pushed-status not independently verified (tags need explicit
+  `git push --tags`); user confirmed if both occurred.
+
+  **Process habit added:** at the start of each wave, run
+  `git fetch --tags && git status -uno && git log @{u}..HEAD --oneline`
+  across each fork to reconcile any drift between local belief
+  and ground truth. Distinguishes "I just verified this" from
+  "I believe this based on earlier observation." Without this,
+  the agent's mental model drifts from reality (this wave: I was
+  carrying a stale "11 unpushed" belief across two doc updates).
+
+  Outbound git auth (push, fetch from private remotes) requires
+  user-side execution; the agent reports + asks rather than
+  inferring upstream state.
 - **EXPORT_SYMBOL ladder hasn't been exercised yet.** Wave 1 needed
   zero kernel-side exports. First Wave-2 K3 module will be the real
   test. Watch for: defaulting to `EXPORT_SYMBOL_GPL` and per-export
