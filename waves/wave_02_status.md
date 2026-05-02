@@ -126,7 +126,7 @@ parent-clock-not-found warnings in dmesg."
 **Single iteration to green.** Build went from "kernel/Kconfig + Makefile
 edits + defconfig append" to all 3 modules passing on first build.
 
-**Validator output** (3 modules, post-mka kernel install):
+**Validator output** (3 modules, two validation points):
 
 | Module | intree | vermagic_match | __versions | CRC match | KMI clean | Verdict |
 |---|---|---|---:|---|---:|---|
@@ -134,8 +134,31 @@ edits + defconfig append" to all 3 modules passing on first build.
 | dispcc-canoe | Y | yes | 38 | 38/38 | 100% | pass |
 | camcc-canoe | Y | yes | 29 | 29/29 | 100% | pass |
 
-All @ vermagic `6.12.23-4k-g6fc93520fed4-dirty`. `tools/jm2/
-validate_module.sh` exits 0.
+Two validation passes (vermagic differed because each kernel-fork
+commit shifts the running kernel's SHA suffix — important
+distinction worth being explicit about):
+
+- **Post-`mka kernel`, pre-commit:** vermagic
+  `6.12.23-4k-g6fc93520fed4-dirty` (kernel built off Phase H SHA
+  + uncommitted Wave 2A changes — `-dirty` suffix).
+- **Post-brunch closeout, post-commit:** vermagic
+  `6.12.23-4k-gd97fcf1de278` (kernel built off the just-landed
+  Wave 2A commit — clean tree, no `-dirty`).
+
+Both passes returned `tools/jm2/validate_module.sh` exit 0.
+
+**Implication for Wave 2's heterogeneous tail:** every kernel-fork
+commit shifts vermagic, so EVERY previously-built source-built
+module needs to be rebuilt to validate against the new kernel.
+The brunch closeout did this implicitly. For sub-waves with
+multiple kernel-fork commits (likely the case for EXPORT
+additions per `EXPORT_SYMBOL_HANDLING.md`), batch the kernel
+commits within a sub-wave when possible — accumulate all the
+EXPORT additions, do them as a series of separate commits per
+the upstream-cleanliness rule, then ONE final rebuild at the
+sub-wave boundary rather than per-commit. The "separate commit
+per EXPORT" discipline is upstream-correctness; the rebuilds are
+a separate cost that doesn't have to follow the same cadence.
 
 **EXPORT_SYMBOL ladder NOT exercised this sub-wave.** External review
 predicted 10–20 EXPORT additions based on qcom-clk's heavy internal-
@@ -244,6 +267,11 @@ This is the strongest pre-hardware gate. dmesg-from-boot verification
 
 ## Sub-wave 2C prep — audio cluster scope (DT-grounded)
 
+**STATUS: scope analysis only — no wire-up commits yet.**
+This section is preparation for sub-wave 2C, not its execution.
+Wire-up + commits land in a separate "Sub-wave 2C execution"
+section once the structural diagnosis below resolves.
+
 Mirroring the rigor that worked for clocks, walked
 `vendor/qcom/opensource/audio-devicetree/canoe-audio.dtsi` to
 inventory the audio dependency surface BEFORE picking modules.
@@ -323,6 +351,96 @@ helpers, and gpr internals are the most likely EXPORT candidates.
 Realistic projection: 5–15 EXPORTs across the cluster, concentrated
 at the foundation modules. Will track per-module commit counts to
 calibrate whether this projection holds.
+
+---
+
+## Sub-wave 2C kickoff — audio-kernel emission inventory (FIRST ACTION)
+
+Before any wire-up commits in 2C, resolve the structural question
+("flip CONFIG gates" vs "from-scratch wire-up") that gates the
+entire sub-wave plan. This was last-turn's biggest open question
+and Opus Web flagged it as the literal first action of 2C — a
+potential 10x scope difference depending on the answer.
+
+**Method:**
+1. Inventory `.ko` files actually emitted by the existing
+   `qcom/opensource/audio-kernel` external build:
+   ```
+   find out/target/product/infiniti/obj/PACKAGING/kernel_modules_intermediates/lib/modules/<release>/ -name '*.ko' \
+       | grep -E '(audio|lpass|swr|spf|gpr|asoc|wcd)' \
+       | xargs -n1 basename
+   ```
+2. Cross-reference against the 13 driver-binding compatibles
+   inventoried in 2C prep above:
+   - `qcom,audio-pkt`, `qcom,audio_prm` (already known source-built)
+   - `qcom,audio-ref-clk`, `qcom,canoe-asoc-snd`, `qcom,gpr`,
+     `qcom,lpass-bt-swr`, `qcom,lpass-cdc`,
+     `qcom,lpass-cdc-clk-rsc-mngr`, `qcom,lpi-pinctrl`,
+     `qcom,msm-audio-ion`, `qcom,msm-audio-ion-cma`,
+     `qcom,spf_core`, `qcom,spf-core-platform`
+3. For each missing compatible, check whether the source produces
+   a corresponding `.ko` (CONFIG-gated-off case) or whether no
+   build target exists (truly unwired case).
+
+**Three possible outcomes** (per Opus Web's framing):
+
+| Outcome | 2C scope | Effort |
+|---|---|---|
+| Most modules emit but with empty/wrong vermagic — gated | Kconfig fragment exercise | hours |
+| Subset emits — partial wire-up needed | Find unbuilt subset, wire those | day(s) |
+| Little/nothing useful emits — full from-scratch | Recipe-stress-test as planned | days |
+
+**Why this gates everything:** the cluster wire order documented
+in 2C prep ("foundation lpass_cdc_dlkm first, then macros, then
+SoundWire...") assumes outcome 3. If reality is outcome 1 or 2,
+that wire order is partly or wholly wasted work. Same lesson as
+the Wave 1 `oplusboot` mistake — build-system reality is
+authoritative; assumptions made before checking are how scope
+miscalibrates.
+
+### Status
+
+- [ ] audio-kernel emission inventory completed
+- [ ] 13 compatibles cross-referenced
+- [ ] Outcome determined (1, 2, or 3)
+- [ ] 2C scope reframed based on outcome
+- [ ] Then: actual wire-up commits
+
+---
+
+## Runtime-validation gate consideration (cuttlefish / QEMU)
+
+Per Opus Web post-2A review: the static gates we run pre-flash
+catch a class of bugs (vermagic mismatch, CRC mismatch, missing
+imports, OF compatible mismatch) but defer an entire other class
+to Phase 6 hardware test (probe-time errors, init ordering,
+parent-clock-not-found warnings, IOMMU mapping mismatches, etc.).
+With ~213 modules to land in Wave 2 + more in subsequent waves,
+the count of latent runtime bugs that pass static validation could
+be substantial.
+
+The cost asymmetry: pre-flash debug cycles are minutes
+(build → validate → green/fail). Hardware-flash debug cycles will
+be hours (build → flash → boot → dmesg → debug). Most of the bugs
+will surface in the latter mode, and most will have accumulated
+across multiple sub-waves.
+
+**Decision needed before sub-wave 2C accumulates non-trivial
+landings:** stand up cuttlefish / QEMU runtime validation now, OR
+explicitly accept that Phase 6 will be a multi-day debugging
+mode-shift to surface 10–20+ latent runtime bugs.
+
+This is a one-time investment (a few hours of cuttlefish setup) +
+minutes per sub-wave of post-build runtime smoke check, vs the
+implicit cost of deferring everything to Phase 6.
+
+Recorded here as a deferred decision for the user; not blocking
+2C's emission inventory from starting (the inventory is pre-build
+analysis), but blocks landing 2C wire-up commits without
+an explicit decision on which class of bugs to defer.
+
+Tracking in DEFERRED_FOLLOWUPS.md as item 4 (deferred decision,
+not deferred work).
 
 ---
 

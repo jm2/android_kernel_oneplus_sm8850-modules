@@ -102,6 +102,64 @@ generating any future baseline CSV.
 
 ---
 
+## Cuttlefish / QEMU runtime-validation gate
+
+**Surfaced:** 2026-05-02 (Opus Web post-2A review).
+
+**Context:**
+The static validation gates we run pre-flash (vermagic match, CRC
+match, OF compatible match) catch a meaningful class of bugs but
+defer ALL runtime behaviors to Phase 6 hardware test:
+
+- Probe-time errors (regulator-not-found, GPIO-not-available)
+- Init ordering / DT compatible-match races
+- Parent-clock-not-found warnings on consumers we didn't grep for
+- IOMMU mapping mismatches on DMA-buffer-using modules
+- Suspend/resume code paths
+
+With Wave 2's ~213 modules + subsequent waves, latent runtime bugs
+that pass static validation will accumulate. Phase 6 hardware test
+will then be a multi-day debugging mode-shift (build → flash →
+boot → dmesg → debug, hours per cycle) vs the current pre-flash
+pace (minutes per cycle).
+
+**The decision (not yet made):**
+
+A. **Stand up cuttlefish / QEMU runtime validation NOW.** A few
+hours of one-time setup (kernel-build flag tweaks, GKI image
+extraction, smoke-test scripting) + minutes per sub-wave to run
+the smoke test. Catches ~50–80% of latent runtime bugs while
+feedback loops are still tight.
+
+B. **Defer all runtime validation to Phase 6.** Accept that Phase 6
+will spend N days debugging accumulated latents. Faster Wave 2
+landing rate today; slower hardware bring-up later.
+
+The right choice depends on:
+- Whether cuttlefish/QEMU is feasible for sm8850 (canoe vendor DT
+  may have hardware-specific bindings that don't have QEMU
+  equivalents — needs investigation)
+- User's tolerance for Phase 6 surprise vs Wave 2 friction
+- Whether Wave 2 modules touch DMA / IOMMU / suspend paths that
+  static analysis can't catch
+
+**Concrete tasks for path A (if chosen):**
+1. Investigate sm8850 cuttlefish / QEMU support (probably leans
+   on Google's `aosp_cf_arm64_phone` cuttlefish image with a
+   custom kernel slot)
+2. Build smoke-test script that runs mka kernel + boot in
+   cuttlefish + greps dmesg for ERR/WARN classes (parent clock
+   not found, probe deferred, regulator not found, etc.)
+3. Add as Step 9 in WIRE_UP_RECIPE.md (post-build, pre-commit)
+4. Run after each sub-wave landing
+
+**When to revisit:** Before sub-wave 2C accumulates non-trivial
+landings. The audio cluster will be the first place latent runtime
+bugs are likely to manifest (probe-time clock-tree references,
+DAI registration timing, ASoC machine-driver matching).
+
+---
+
 ## EXPORT_SYMBOL upstream submission cadence
 
 **Surfaced:** 2026-05-02 (EXPORT_SYMBOL_HANDLING.md authoring).
