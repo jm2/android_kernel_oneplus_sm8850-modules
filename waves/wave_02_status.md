@@ -400,11 +400,81 @@ miscalibrates.
 
 ### Status
 
-- [ ] audio-kernel emission inventory completed
-- [ ] 13 compatibles cross-referenced
-- [ ] Outcome determined (1, 2, or 3)
-- [ ] 2C scope reframed based on outcome
+- [x] audio-kernel emission inventory completed
+- [x] 13 compatibles cross-referenced
+- [x] Outcome determined: **≈ 3 with a twist** — framework wired but
+      no canoe-specific config glue
+- [x] 2C scope reframed (see below)
 - [ ] Then: actual wire-up commits
+
+### Inventory finding (2026-05-02)
+
+audio-kernel build IS invoked by brunch — `make modules` and
+`make modules_install` run cleanly. modpost runs and produces a
+`Module.symvers`. But **zero audio .ko files are produced for canoe.**
+
+Root cause located in `audio-kernel/config/`:
+
+```
+$ ls audio-kernel/config/
+bengalauto.conf  gvmauto.conf  holiauto.conf
+kalamaauto.conf  konaauto.conf  lahainaauto.conf
+litoauto.conf    pineappleauto.conf
+(no canoeauto.conf)
+```
+
+Each audio-kernel sub-Kbuild has:
+```
+ifeq ($(CONFIG_ARCH_BENGAL), y)
+    include $(AUDIO_ROOT)/config/bengalauto.conf
+else ifeq ($(CONFIG_ARCH_KALAMA), y)
+    include $(AUDIO_ROOT)/config/kalamaauto.conf
+... (no canoe branch)
+```
+
+Without a canoe branch + matching `canoeauto.conf`, the if-elif
+chain falls through and no `obj-y/m` lists get populated. Net
+result: build succeeds (no errors), produces no modules.
+
+### Reframed 2C scope (post-inventory)
+
+Closer to "outcome 1 (CONFIG flip)" than "outcome 3 (from-scratch)":
+the framework is fully wired; only canoe-specific configuration
+glue is missing.
+
+Concrete tasks:
+
+1. Author `audio-kernel/config/canoeauto.conf` modeled on
+   `pineappleauto.conf` (closest predecessor SoC — sm8650 era).
+2. Author `audio-kernel/config/canoeautoconf.h` analogously
+   (it's the C-header version of the .conf, surfaces feature flags
+   to the source code).
+3. Add `else ifeq ($(CONFIG_ARCH_CANOE), y)` branches to each
+   audio-kernel sub-Kbuild (estimated ~10–20 files). Largely
+   mechanical given the existing pattern.
+4. Verify `CONFIG_ARCH_CANOE=y` is in the kernel config (it is —
+   already in `lineage_genksyms_workaround.config` from Phase A).
+5. Build, validate the resulting .ko set against the 13 expected
+   compatibles from the DT inventory.
+
+### Revised effort projection
+
+Original projection (assuming outcome 3, full from-scratch): 3–5
+days, 5–15 EXPORTs.
+
+Revised (post-inventory, outcome ≈ 1): 2–4 hours, possibly zero
+EXPORTs (since pineapple's audio drivers are similar enough to
+sm8550/sm8650 era that whatever they consume is likely already
+covered by Phase F/H whitelist + clk-qcom + the just-landed canoe
+clock cluster).
+
+This is the third sub-wave (Wave 1, 2A, now 2C) where the actual
+work has been materially smaller than projected. Pattern emerging:
+the prior phases (F/H + Wave 1 modules-side wire-up) did a lot of
+implicit infrastructure work, so subsequent waves keep finding the
+groundwork already in place. Worth tracking whether this pattern
+holds for 2D-2I or whether it tails off as the modules become more
+specialized.
 
 ---
 
