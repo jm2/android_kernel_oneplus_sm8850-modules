@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Source-built external module (Phase 4 proof-point).
+# Translated from vendor/oplus/kernel/dfr/oplus_local_modules.bzl:
+#   define_oplus_ddk_module(
+#       name = "oplus_bsp_dfr_keyevent_handler",
+#       srcs = native.glob(["**/*.h", "common/keyevent_handler/keyevent_handler.c"]),
+#       includes = ["."],
+#   )
+# Provides keyevent_register_notifier / keyevent_unregister_notifier.
+# Consumed by combkey_monitor (Bazel ko_deps) and any future event taps.
+
+MODULE = oplus_bsp_dfr_keyevent_handler
+$(MODULE)-objs := keyevent_handler.o
+obj-$(CONFIG_OPLUS_FEATURE_KEYEVENT_HANDLER) += $(MODULE).o
