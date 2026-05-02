@@ -154,12 +154,13 @@ def main(argv):
     oem_prebuilt = set()
     if args.source_built_glob:
         from glob import glob
-        for p in glob(args.source_built_glob):
+        # recursive=True enables `**` to match nested directories
+        for p in glob(args.source_built_glob, recursive=True):
             source_built.add(Path(p).stem)
             source_built.add(Path(p).stem.replace("-", "_"))
     if args.oem_prebuilt_glob:
         from glob import glob
-        for p in glob(args.oem_prebuilt_glob):
+        for p in glob(args.oem_prebuilt_glob, recursive=True):
             oem_prebuilt.add(Path(p).stem)
             oem_prebuilt.add(Path(p).stem.replace("-", "_"))
 

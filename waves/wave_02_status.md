@@ -90,6 +90,17 @@ Triaged:
 The narrower cluster is good news for Wave 2 schedule: 3 controllers
 instead of the 5–8 I'd speculated.
 
+> **REVISED 2026-05-02 (post-2A.5):** The "refuted speculations"
+> list above was WRONG. My grep `clocks = <&LABEL` matched only the
+> first phandle in `clocks = <...>` arrays. canoe.dtsi has
+> multi-phandle arrays like `clocks = <&rpmhcc CLK>, <&cambistmclkcc
+> 0>, <&camcc 0>;` whose 2nd/3rd phandles I missed. Sub-wave 2A.5
+> (corrective) wired the 5 missed controllers: cambistmclkcc-canoe,
+> evacc-canoe, gpucc-canoe, tcsrcc-canoe, videocc-canoe. See section
+> below. The DT-consistency-check tool (tools/jm2/dt_consistency_check.py)
+> with array-aware regex caught this on its first run and is now
+> the standard pre-flash check before every sub-wave.
+
 ### Cluster topology
 
 Per qcom-clk convention:
@@ -239,6 +250,86 @@ Most surprising finding: zero EXPORT_SYMBOL additions needed. The
 EXPORT_SYMBOL_HANDLING.md ladder isn't yet exercised; expect first
 real exercise in audio or oplus_bsp_* sub-wave.
 
+
+---
+
+## Sub-wave 2A.5 — corrective wire-up of 5 missed controllers (2026-05-02)
+
+### Background
+
+Sub-wave 2A's "DT-grounded scope" claim was incomplete. My grep
+`clocks = <&LABEL` matched only the first phandle in clocks arrays;
+multi-phandle arrays like
+  `clocks = <&rpmhcc CLK>, <&cambistmclkcc 0>, <&camcc 0>;`
+slipped past. Caught when running the just-built
+`tools/jm2/dt_consistency_check.py` against `canoe.dtsi +
+canoe-audio.dtsi`: 24 oem-only-load-fails findings, of which 5 were
+canoe-specific clock controllers.
+
+This is exactly the latent-bug class Opus Web flagged: would have
+surfaced at Phase 6 hardware test as "device hangs at clock-tree
+init" with no obvious cause. Caught at sub-wave-boundary, fixed in
+~30 minutes.
+
+### Modules added
+
+5 controllers, same template as 2A:
+
+| Module | __versions | CRC match | KMI clean | Verdict |
+|---|---:|---|---:|---|
+| cambistmclkcc-canoe (Camera BIST Mclk) | 25 | 25/25 | 100% | pass |
+| evacc-canoe (EVA — Enhanced Video Analytics) | 27 | 27/27 | 100% | pass |
+| gpucc-canoe (Graphics — boot-critical for Adreno) | 25 | 25/25 | 100% | pass |
+| tcsrcc-canoe (TCSR — Top Control & Status Registers) | 9 | 9/9 | 100% | pass |
+| videocc-canoe (Video) | 26 | 26/26 | 100% | pass |
+
+All in-tree built (intree=Y), vermagic-match yes, CRC 100%, KMI
+100%. validate_module.sh exits 0.
+
+### DT-consistency check post-2A.5
+
+Re-ran `dt_consistency_check.py`:
+
+| | pre-2A | post-2A | post-2A.5 |
+|---|---:|---:|---:|
+| oem-only-load-fails | n/a (tool didn't exist) | 24 | **0** |
+| clean | n/a | varies (glob bug) | 24 |
+| no-driver-found | n/a | 67 | 67 |
+| no-compatible | n/a | 77 | 77 |
+
+The post-2A 24 → post-2A.5 0 transition includes both the 5
+controllers I added AND a glob bug fix (recursive=True needed for
+`**/*.ko` to traverse the in-tree-built kernel/drivers/clk/qcom/
+output directory). The 67 "no-driver-found" and 77 "no-compatible"
+remain — false positives (CPU power domains, idle states, etc.)
+that v1 of the tool can't disambiguate.
+
+### Brunch closeout
+
+`~/android/iter_brunch.sh wave2a5_closeout` exit 0. Full ROM
+rebuild successful with all 8 controllers in vendor_dlkm at
+post-2A.5 vermagic.
+
+### Lesson + recipe addendum
+
+The scope-finding regex needs to be array-aware when the DT
+property allows arrays. v1 of `dt_consistency_check.py` uses an
+array-aware approach (find the entire `clocks = <...>;` body, then
+extract every `<&LABEL>` from it). Should be the standard scope-
+finding tool for any future sub-wave's DT-grounded scoping rather
+than ad-hoc grep.
+
+Same general failure-mode class as the state-staleness pattern:
+"quick analytical pass → conclusion → asserted as fact across
+multiple turns without re-verification." The corrective rule:
+when a quick analysis (grep, find, regex pass) gates a non-trivial
+decision, run a second more-careful pass before declaring the
+result complete.
+
+### Commit
+
+kernel/oneplus/sm8850 `59bd74c45df9`. No companion device-tree
+change (in-tree drivers don't need TARGET_KERNEL_EXT_MODULES).
 
 ---
 
