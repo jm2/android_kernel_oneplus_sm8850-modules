@@ -203,21 +203,137 @@ abstract category): 213 OEM-prebuilt-only modules grouped roughly:
 
 ---
 
+## Wave 1 closeout verification (2026-05-02)
+
+Per IMPLEMENTATION_PLAN.md §5.4, Wave 1 needed an "MVB ROM that
+passes Phase 2 validators end-to-end" before being marked complete.
+Initially missed; closed out with this section.
+
+### Brunch closeout
+
+`~/android/iter_brunch.sh wave1_closeout` (4m39s, exit 0):
+- Fresh ROM zip: `lineage-23.2-20260502-UNOFFICIAL-infiniti.zip` (2.3 GB)
+- vendor_dlkm.img: 73 MB
+- All 4 wave-1 .ko files installed in `vendor_dlkm/lib/modules/`
+  with vermagic `6.12.23-4k-g6fc93520fed4` (source-built, not OEM
+  prebuilt — overwrite race won correctly)
+- validate_module.sh on all 4 installed modules: verdict=pass
+
+### Release-candidate tags landed
+
+Per plan §5.4 ("release-candidate tag on each jm2 fork"):
+- `kernel/oneplus/sm8850` → `phase-h-wave-1`
+- `kernel/oneplus/sm8850-modules` → `wave-1`
+- `device/oneplus/sm8850-common` → `wave-1`
+
+(Tags placed correctly after one fix-up — initial attempt put both
+on kernel repo.)
+
+### Clock-controller MVB-blocker discovered (Opus Web feedback)
+
+External review flagged that the wave_01_status.md "Wave 2 chosen
+content" section deferred canoe clock controllers as Phase 7+ stretch
+without verifying they're available somewhere in our build. The
+verification (Opus Web's recommended "option (a) vs (b)
+disambiguation"):
+
+- `.config` for `CONFIG_*GCC*CANOE` / `CONFIG_*DISPCC*CANOE`: NONE.
+  No clock-controller for canoe is built into our vmlinux.
+- `drivers/clk/qcom/Makefile` `canoe` entries: NONE. Source files
+  (`gcc-canoe.c`, `dispcc-canoe.c`, `camcc-canoe.c`) exist as
+  orphans — present in tree, never compiled.
+- `vendor_dlkm/lib/modules/gcc-canoe.ko` exists but vermagic is
+  `6.12.23-android16-5-o-4k` (OEM prebuilt) — won't load against
+  our source kernel.
+- `modules.list.msm.canoe` (vendor_ramdisk early-init list): NO
+  clock-controller references.
+
+**Implication:** our source kernel has zero canoe clock code. Source
+not compiled, modules can't load. Phase 6 hardware test would fail
+at clock-tree initialization. **MVB-blocking.**
+
+**Action:** promote canoe clock controllers from "Phase 7+ stretch"
+to **Wave 2 first priority**. Concretely needed:
+- `drivers/clk/qcom/Kconfig` Kconfig stanzas for `SM_GCC_CANOE`,
+  `SM_DISPCC_CANOE`, `SM_CAMCC_CANOE` (and possibly TCSRCC, VIDEOCC,
+  GPUCC, EVACC, CAMBISTMCLKCC — verify which are required by canoe
+  DT)
+- `drivers/clk/qcom/Makefile` entries:
+  `obj-$(CONFIG_SM_*_CANOE) += *-canoe.o`
+- `lineage_genksyms_workaround.config` (or similar fragment):
+  `CONFIG_SM_*_CANOE=m` for each
+- These will likely surface EXPORT_SYMBOL gaps (clock-controller
+  internals reference vendor-internal helper functions). First
+  exercise of EXPORT_SYMBOL_HANDLING.md ladder.
+
+This recasting of Wave 2 priorities is what
+`waves/wave_02_status.md` will document when that wave starts.
+
+## Wave 2 calibration notes (Opus Web feedback, 2026-05-02)
+
+The original wave_02 estimate ("5–10 modules / day") in this doc
+was likely optimistic. Opus Web's calibration:
+
+- **K1/K2 vs K3 rates will diverge.** Wave 1's DFR modules were
+  K1/K2 (lowest cleanliness 84.6%). When Wave 2 hits the first K3
+  module (anything below 80%), expect 1–3 EXPORT_SYMBOL additions
+  per module, each requiring its own commit per
+  EXPORT_SYMBOL_HANDLING.md discipline. That drops K3 rate to
+  ~2–4 modules / day with EXPORT bookkeeping.
+- **Chained-dep discovery inflates per-module count by 30–50%.**
+  When haptic_feedback's `dft` ko_dep turns out to depend on
+  something in oplus/system that depends on something in
+  qcom/securemsm, Wave 2 expanded scope by 3 modules to land 1
+  that was originally in modules.load. This is the right work,
+  but the per-module-of-original-scope rate inflates.
+- **Track K1/K2 vs K3 rates separately.** Don't average; the
+  distribution matters for projection.
+- **Each subsystem reset.** DFR was internally coherent (one set of
+  idioms). Wave 2's spread (audio / oplus_bsp_* / qcom_qti / network)
+  means the recipe likely needs subsystem-specific addenda. The
+  first audio module will be hard; the second easier; first
+  oplus_bsp_touchpanel starts the cycle over.
+
+The 3–6 week estimate from IMPLEMENTATION_PLAN.md §16 still applies
+but the work will be lumpy, not uniform. Plan accordingly.
+
 ## Open follow-ups
 
-- **Push the unpushed jm2 commits.** Latest commits per fork:
-  - `kernel/oneplus/sm8850`: `6fc93520fed4` (Phase H — KMI-strict)
-  - `kernel/oneplus/sm8850-modules`: `554246b6` (Phase 5 wave 1 DFR)
-  - `device/oneplus/sm8850-common`: `047a8dd` (wave 1 device wiring)
-  - 9 commits total across these three forks awaiting push.
+- **Push the 11 unpushed jm2 commits.** Latest per fork:
+  - `kernel/oneplus/sm8850`: `6fc93520fed4` (Phase H), tag
+    `phase-h-wave-1`
+  - `kernel/oneplus/sm8850-modules`: `52fca02` (DEFERRED_FOLLOWUPS),
+    tag `wave-1`
+  - `device/oneplus/sm8850-common`: `047a8dd` (wave 1 device wiring),
+    tag `wave-1`
+  - 11 commits + 3 tags awaiting push (Opus Web flagged accumulating
+    risk; push after every wave at minimum).
+- **EXPORT_SYMBOL ladder hasn't been exercised yet.** Wave 1 needed
+  zero kernel-side exports. First Wave-2 K3 module will be the real
+  test. Watch for: defaulting to `EXPORT_SYMBOL_GPL` and per-export
+  separate commits before the wire-up commit.
+- **OEM-kernel `BOARD_PREBUILT_KERNEL=true` switch wiring.**
+  Documented in DEFERRED_FOLLOWUPS.md (item 1). User-confirmed
+  deferred. Brunch closeout exercised the BOARD_VENDOR_KERNEL_MODULES
+  wildcard path (which IS structurally working alongside source-built
+  modules), so the structural fallback is intact even without the
+  dedicated switch. Revisit before Phase 6.
 - **Recipe stress-test still incomplete.** Wave 1 didn't exercise:
   - Kconfig authoring path (Step 3.5)
   - EXPORT_SYMBOL ladder (no missing exports surfaced)
-  - Cross-subsystem chained ko_deps (dft → haptic_feedback → haptic)
+  - In-tree-driver wire-up (different from external-module pattern —
+    Wave 2 clock controllers will be the first)
+  - Cross-subsystem chained ko_deps
   - WLAN-tier complexity
-  These will surface in Wave 2+. Recipe will likely need further
-  refinement once they do.
-- **OEM-fallback verification step (Step 8) NOT yet exercised.** No
-  rebuild of the OEM-kernel-prebuilt fallback path was run after this
-  wave. Should be done before Wave 2 starts to confirm Phase H +
-  Wave 1 didn't regress the fallback.
+
+## Wave 1 marked COMPLETE (2026-05-02)
+
+All Plan §5.4 deliverables now satisfied:
+- ✅ jm2 commits across 3 forks
+- ✅ wave_01_status.md (this doc)
+- ✅ MVB ROM passes Phase 2 validators end-to-end (brunch closeout)
+- ✅ Release-candidate tags on each jm2 fork
+
+Per Plan §13 ("Per-wave: write status doc BEFORE the wave is marked
+complete"), this discipline lapse is noted. Going forward: re-read
+the relevant plan section before claiming any phase/wave done.
