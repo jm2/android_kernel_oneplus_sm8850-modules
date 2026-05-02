@@ -139,23 +139,38 @@ generating any future baseline CSV.
 
 ---
 
-## Cuttlefish / QEMU runtime-validation gate
+## ~~Cuttlefish / QEMU runtime-validation gate~~
 
-**Status (2026-05-02 update):** **Lighter-weight substitute adopted.**
-`tools/jm2/dt_consistency_check.py` (v1, landed `e79fb87` + glob fix
-`4b0ff4c`) catches the highest-value class of bugs at static-analysis
-cost. First run caught an MVB-blocker (5 missed canoe clock
-controllers — sub-wave 2A.5 corrective). Cuttlefish/QEMU is no longer
-the only path to runtime-validation; it stays deferred unless the
-static check turns out to catch insufficient bugs as Wave 2 progresses.
+**RESOLVED 2026-05-02: WON'T-DO (superseded by static-check pair).**
 
-**Concrete revisit triggers:**
-- Phase 6 hardware test surfaces ≥3 latent runtime bugs the DT-check
-  missed
-- Sub-wave 2D-2I lands a class of bug the DT-check can't reason about
-  (e.g., regulator-supply name mismatches, DMA buffer alignment)
+The static-check substitutes — `dt_consistency_check.py` (landed
+`e79fb87` + glob fix `4b0ff4c`) and `exports_superset_check.py`
+(landed `0eb0b0f`) — together cover the two highest-value classes of
+latent runtime bug at static-analysis cost:
+
+1. DT-consumer-references-non-loadable-producer (caught in 2A.5: 5
+   missed canoe clock controllers, an MVB-blocker)
+2. Source-built .ko missing OEM-prebuilt's EXPORT_SYMBOLs (would have
+   caught 2C v2's OPLUS_ARCH_EXTENDS depmod failure pre-flash)
+
+Empirical evidence after 4 sub-waves (2A, 2A.5, 2B, 2C): every latent
+runtime bug we've encountered fits one of these two classes. Brunch
+closeout (depmod, vermagic match, CRC match) catches the rest. No
+sub-wave has produced a bug requiring ARM64 emulation to detect.
+
+The cost-benefit math has flipped: cuttlefish/QEMU setup is hours of
+investment + minutes per sub-wave to operate; the two static checkers
+each took <1 day to build and run in seconds. The static gate is
+strictly cheaper AND has caught real bugs the runtime gate would have
+caught later anyway.
+
+**Reopen triggers (raise bar — static gate has earned trust):**
+- Phase 6 hardware test surfaces ≥3 latent runtime bugs that fit
+  NEITHER static-check class (i.e., truly novel runtime-only failure
+  modes)
 - A wave's brunch-closeout produces a structurally-valid ROM that
-  fails to boot in a way that costs more than 1 day to root-cause
+  fails to boot in a way that costs more than 1 day to root-cause AND
+  a third static-check tool can't be built to catch the bug class
 
 **Surfaced:** 2026-05-02 (Opus Web post-2A review).
 

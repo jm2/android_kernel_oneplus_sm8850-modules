@@ -808,6 +808,56 @@ Fresh ROM zip lineage-23.2-20260502-UNOFFICIAL-infiniti.zip @ 2.3 GB.
 
 ---
 
+## Priors recalibration (post 2A/2A.5/2B/2C, 2026-05-02)
+
+Four sub-waves have landed without exercising the EXPORT_SYMBOL
+ladder once. Pre-Wave-2 projection (drawn from Plan §11) was 50–150
+EXPORTs over the full wire-up at a rate that rises through each
+sub-wave; actual is **0 to date**.
+
+**What this is and isn't evidence of:**
+
+- It IS evidence that Phase F whitelist + Phase H trim — combined
+  with the source-built kernel re-exporting whatever consumers need
+  via the canonicalize-against-OEM step in Phase 1 — has been more
+  comprehensive than expected. The whitelist generation (`make
+  abi/abi.stg` + post-process to `abi_gki_aarch64.stg`) appears to
+  have absorbed the cross-module consumer set.
+- It IS evidence that K3 modules in clusters with oplus-specific
+  forks (clocks, audio) tend to be self-contained: consumers and
+  producers within the same cluster, exports already at-module-edge.
+- It is NOT evidence the rest of Wave 2 will follow the trend. The
+  remaining sub-waves (2D oplus_bsp_*, 2F oplus_other, 2H
+  oplus_network) are heterogeneous backlog, not clusters. They have
+  more cross-tree consumer/producer fan-in patterns (e.g.,
+  oplus_bsp_touch consumes drm/lcd APIs, oplus_network consumes
+  net/core APIs), where exports may live in core kernel files that
+  Phase F's whitelist generation didn't reach because no in-tree
+  module was consuming them at trim time.
+- It is NOT evidence to retire `EXPORT_SYMBOL_HANDLING.md`'s
+  4-step ladder. The discipline is cheap; the failure mode it
+  prevents (silent kernel-config drift to satisfy a single module's
+  consumer) is expensive.
+
+**Updated projection:**
+
+- Wave 2 total EXPORTs (revised): 5–30 across remaining sub-waves
+  (down from initial 50–150 estimate). Heavily weighted toward 2D
+  + 2H based on cross-tree consumer fan-in patterns.
+- The `kernel_export_additions.md` file may genuinely not need to
+  exist until Wave 3+. If it doesn't, the upstream-submission
+  cadence task in DEFERRED_FOLLOWUPS shifts later.
+
+**Calibration plan:**
+
+- 2H (oplus_network, 4 modules) FIRST — smallest, exercises
+  cross-tree net/core consumer pattern. If it lands with 0 EXPORTs,
+  the trend is real and 2D+2F projections should drop further.
+- If 2H needs 1+ EXPORTs, the file gets created and we hold the
+  current projection.
+
+---
+
 ## Sub-wave 2B onwards — heterogeneous module backlog
 
 After the clock cluster lands, Wave 2 moves to the OEM-prebuilt-only
