@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Source-built external module (Phase 5 wave 1 — DFR mini-wave).
+# Translated from vendor/oplus/kernel/dfr/oplus_local_modules.bzl:
+#   define_oplus_ddk_module(
+#       name = "oplus_bsp_dfr_dump_device_info",
+#       srcs = native.glob(["**/*.h", "qcom/dump_device_info/dump_device_info.c"]),
+#       ko_deps = dump_device_info_ko_deps,    # boot/projectinfo + (oplusboot, debug_symbol)
+#       includes = ["."],
+#   )
+#
+# Source includes <../drivers/soc/qcom/debug_symbol.h> via path traversal —
+# resolves naturally because the kernel build adds $(srctree)/include and
+# the relative ../ walks up to drivers/. No extra ccflags-y needed.
+
+MODULE = oplus_bsp_dfr_dump_device_info
+$(MODULE)-objs := dump_device_info.o
+obj-$(CONFIG_OPLUS_FEATURE_DUMP_DEVICE_INFO) += $(MODULE).o

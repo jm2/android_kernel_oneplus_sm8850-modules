@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Source-built external module (Phase 5 wave 1 — DFR mini-wave).
+# Translated from vendor/oplus/kernel/dfr/oplus_local_modules.bzl:
+#   define_oplus_ddk_module(
+#       name = "oplus_bsp_dfr_dump_reason",
+#       srcs = native.glob(["**/*.h", "qcom/dump_reason/dump_reason.c"]),
+#       ko_deps = dump_reason_ko_deps,         # dump_device_info + drivers/soc/qcom/smem
+#       copts = ["-DCONFIG_QCOM_SMEM"],
+#       includes = ["."],
+#   )
+
+MODULE = oplus_bsp_dfr_dump_reason
+$(MODULE)-objs := dump_reason.o
+obj-$(CONFIG_OPLUS_FEATURE_DUMP_REASON) += $(MODULE).o
+
+# Bazel `copts = ["-DCONFIG_QCOM_SMEM"]` → ccflags-y per-module
+ccflags-y += -DCONFIG_QCOM_SMEM

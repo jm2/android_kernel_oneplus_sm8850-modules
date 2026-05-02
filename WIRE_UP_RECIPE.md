@@ -63,12 +63,32 @@ What each field maps to:
 | `conditional_defines = {"qcom": [...]}` | `ccflags-y += -DFOO` if QCOM is the platform (it is, for sm8850) |
 | `header_deps` | Add the dep's include path via `ccflags-y` |
 
-For the proof-point above, the `ko_deps` line is omitted in our wire-up
-because keyevent_handler doesn't actually use anything from
-oplus_bsp_boot_projectinfo at the symbol level (the dep was a Bazel
-build-ordering hint, not a real symvers consumer). When you can't
-tell, prefer to wire the KBUILD_EXTRA_SYMBOLS — extra deps are harmless,
-missing deps cause modpost errors.
+**Always include every `ko_deps` entry — don't skip based on judgment.**
+A Phase 5 wave 1 stress-test confirmed this. When wiring
+`oplus_bsp_dfr_dump_device_info`, the BUILD.bazel listed `oplusboot`
+as a `ko_dep`. The `oplusboot` module isn't in modules.load and
+appears unused at first glance, so I dismissed it. modpost then
+errored on `serial_no` undefined — turns out dump_device_info
+imports `serial_no` (defined in `oplusboot.c`) via
+`#include <soc/oplus/system/oplus_project.h>`. The fix was adding
+the right symvers, but the diagnostic was a wasted iteration. The
+recipe rule stands: extra deps are harmless, missing deps cause
+modpost errors. Translate every `ko_deps` entry; trust the BUILD.bazel.
+
+**Cross-module name mapping is non-trivial.** A Bazel `ko_deps`
+target like `//vendor/oplus/kernel/boot:oplusboot` doesn't always
+correspond to a `.ko` of that name in our build. Source files can be
+bundled — e.g. `oplusboot.c` is one of seven `.c` files compiled into
+`oplus_bsp_cmdline_parser.ko` in our build. The KBUILD_EXTRA_SYMBOLS
+path is the BUNDLE's `Module.symvers`, not the original Bazel target's.
+
+To find the right path:
+
+1. `grep -rn 'EXPORT_SYMBOL.*<missing-symbol>' kernel/oneplus/sm8850-modules/vendor/`
+   to find the source file that exports it.
+2. Walk up to the dir containing the Kbuild — that's the bundle.
+3. `cat <bundle-dir>/Kbuild` confirms via `MODULE = ...` and `-objs := ...`.
+4. The bundle's `Module.symvers` lives in the same dir as the Kbuild.
 
 The `bazel_kbuild_diff.py` tool (in `tools/jm2/`) can parse the BUILD
 file and compare against your Kbuild to flag missing/extra entries.

@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Source-built external module (Phase 5 wave 1 — DFR mini-wave).
+# Translated from vendor/oplus/kernel/dfr/oplus_local_modules.bzl:
+#   define_oplus_ddk_module(
+#       name = "oplus_bsp_dfr_pmic_monitor",
+#       srcs = native.glob(["**/*.h"]),
+#       conditional_srcs = {
+#           "CONFIG_OPLUS_DDK_MTK": {
+#               False: [oplus_pmic_info_smem.c, main.c,
+#                       oplus_pmic_machine_state.c, oplus_ocp_dev.c,
+#                       oplus_ocp_state_nvmem.c],
+#           }
+#       },
+#       includes = ["."],
+#   )
+#
+# Multi-source. We're QCOM-platform (not MTK), so all 5 .c files compose
+# into the single .ko. No ko_deps declared.
+
+MODULE = oplus_bsp_dfr_pmic_monitor
+$(MODULE)-objs := \
+    main.o \
+    oplus_pmic_info_smem.o \
+    oplus_pmic_machine_state.o \
+    oplus_ocp_dev.o \
+    oplus_ocp_state_nvmem.o
+obj-$(CONFIG_OPLUS_FEATURE_PMIC_MONITOR) += $(MODULE).o
