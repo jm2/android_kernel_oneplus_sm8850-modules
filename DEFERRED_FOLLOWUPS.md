@@ -79,6 +79,43 @@ fallback (then the switch is the diagnostic tool that confirms).
 
 ---
 
+## HDMI audio codec wire-up (audio-kernel needs msm_ext_display include path)
+
+**Surfaced:** 2026-05-02 (sub-wave 2C v1 build).
+
+**Context:**
+audio-kernel's `asoc/codecs/msm_hdmi_codec_rx.c` `#include
+<msm_ext_display.h>` — header lives in the mm-drivers/msm_ext_display
+external module's include dir. audio-kernel's Kbuild doesn't currently
+wire that include path. v1 of sub-wave 2C deferred by commenting out
+`CONFIG_SND_SOC_MSM_HDMI_CODEC_RX=m` in both `canoeauto.conf` and
+`canoeautoconf.h`. Audio cluster builds cleanly without it.
+
+**Concrete tasks:**
+1. Add `EXTRA_CFLAGS += -I$(KBUILD_EXTMOD)/../../mm-drivers/msm_ext_display/include`
+   (or equivalent path resolution) to audio-kernel/asoc/codecs/Kbuild
+   under the canoe gate
+2. Verify msm_ext_display is built BEFORE audio-kernel in
+   TARGET_KERNEL_EXT_MODULES ordering (it is — listed before
+   audio-kernel in current order)
+3. Re-enable CONFIG_SND_SOC_MSM_HDMI_CODEC_RX in both canoeauto.conf
+   and canoeautoconf.h
+4. Build, validate `hdmi_dlkm.ko` lands
+
+**Rationale for deferring:** HDMI audio is a tail feature. Most
+canoe devices use built-in speakers + headphone jack via lpass-cdc,
+not HDMI output. The 30+ other audio modules in the cluster are
+unblocked by the deferral. Closing this gap is wire-up, not
+infrastructure.
+
+**When to revisit:** When something downstream depends on HDMI
+audio (display driver requesting audio path? user feedback about
+HDMI sound?), OR when sub-wave 2D-2I has a similar
+include-path-from-other-external pattern that benefits from the
+same fix landing once.
+
+---
+
 ## Make Phase 3 classifier handle hyphen/underscore normalization
 
 **Surfaced:** 2026-05-02 (Wave 1 prep — the "76 unmapped" triage
