@@ -685,7 +685,7 @@ not deferred work).
 
 ---
 
-## Sub-wave 2C — audio cluster wire-up (COMPLETE pending brunch closeout)
+## Sub-wave 2C — audio cluster wire-up (COMPLETE 2026-05-02)
 
 ### Approach (post-inventory, outcome ≈ 1)
 
@@ -764,10 +764,47 @@ Per calibration discipline: NOT yet updating Wave 2 timeline. Need
 ≥2 more sub-wave data points from genuinely heterogeneous content
 (2D oplus_bsp_*, 2H oplus_network) before priors can be recalibrated.
 
-### Commit
+### Commits
 
-modules `05aecd9a`. No companion device-tree change (audio-kernel
-already in TARGET_KERNEL_EXT_MODULES).
+- modules `05aecd9a`: canoeauto.conf + canoeautoconf.h + 11 Kbuild
+  canoe gates + HDMI codec deferral + DEFERRED_FOLLOWUPS entry
+- modules `99849079` (corrective v3): `#define OPLUS_ARCH_EXTENDS 1`
+  in canoeautoconf.h. Brunch closeout v2 surfaced 2 OEM-prebuilt
+  depmod errors (oplus_daemon_adsp_ssr / oplus_set_sound_card_init_done
+  unknown). adsp-loader.c had the symbols inside `#ifdef
+  OPLUS_ARCH_EXTENDS`; OEM Bazel-flow injects the define, we mirror
+  via the autoconf header so all sub-Kbuilds inherit it.
+
+No companion device-tree change (audio-kernel already in
+TARGET_KERNEL_EXT_MODULES).
+
+### Lesson for downstream sub-waves
+
+When a source-built module overwrites an OEM prebuilt, any
+oplus-specific EXPORT_SYMBOLs gated by `#ifdef OPLUS_ARCH_EXTENDS`
+(or analogous oplus-architecture defines) need to be mirrored into
+our build's preprocessor environment. Otherwise OEM prebuilts that
+consume those exports break at depmod time. Affected sub-waves
+likely: 2D (oplus_bsp_*), 2H (oplus_network), 2F (oplus_other audio
+extensions).
+
+For audio specifically, `canoeautoconf.h` now carries the define.
+Other module trees may need analogous treatment.
+
+### Brunch closeout
+
+`~/android/iter_brunch.sh wave2c_closeout_v2` exit 0, 4m41s.
+Fresh ROM zip lineage-23.2-20260502-UNOFFICIAL-infiniti.zip @ 2.3 GB.
+30 audio modules installed in vendor_dlkm under
+`updates/{dsp,ipc,soc,asoc,asoc/codecs,asoc/codecs/lpass-cdc,...}/`.
+
+### Sub-wave 2C COMPLETE per Plan §5.4
+
+- ✅ jm2 commits on modules fork (audio-kernel changes + doc retro)
+- ✅ wave_02_status.md retrospective (this section)
+- ✅ MVB ROM passes Phase 2 validators (brunch closeout exit 0;
+  adsp_loader_dlkm exports both previously-missing symbols)
+- ✅ Release-candidate tag (`wave-2c` on modules fork — about to land)
 
 ---
 
