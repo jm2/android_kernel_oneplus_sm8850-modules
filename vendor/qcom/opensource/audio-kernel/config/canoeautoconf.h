@@ -4,6 +4,15 @@
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+/* OPLUS_ARCH_EXTENDS gates oplus-specific extensions in audio-kernel
+ * source files (e.g., adsp-loader.c's oplus_daemon_adsp_ssr +
+ * oplus_set_sound_card_init_done EXPORT_SYMBOLs that OEM-prebuilt
+ * audio modules like oplus_audio_daemon and machine_dlkm consume).
+ * OEM Bazel-flow injects this; we mirror via this autoconf header
+ * which sub-Kbuilds INCS += -include. Surfaced 2026-05-02 by
+ * brunch-closeout depmod errors. */
+#define OPLUS_ARCH_EXTENDS 1
+
 #define CONFIG_SND_SOC_MSM_QDSP6V2_INTF 1
 #define CONFIG_SND_SOC_CANOE 1
 #define CONFIG_SND_EVENT 1
