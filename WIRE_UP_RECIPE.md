@@ -144,6 +144,50 @@ Key points:
 
 ---
 
+## Step 3.5 — Kconfig authoring (when needed)
+
+If the source uses a `CONFIG_OPLUS_FEATURE_*` (or similar) symbol via
+`#ifdef`, the build will silently miscompile (skipping the `#ifdef`'d
+code) unless that CONFIG is defined somewhere reachable. Three places
+to land it:
+
+**Option A — module-local Kconfig (most common):**
+The OEM ships a Kconfig file alongside the source dir, e.g.
+`vendor/oplus/kernel/dfr/common/keyevent_handler/Kconfig`:
+
+```
+config OPLUS_FEATURE_KEYEVENT_HANDLER
+    tristate "generic keyevent_handler"
+    default n
+    help
+      define this config to enable generic keyevent_handler.
+```
+
+If the file is already there, just confirm the parent
+`vendor/<subsystem>/Kconfig` has a `source` line for it. Setting
+`CONFIG_OPLUS_FEATURE_KEYEVENT_HANDLER=m` happens via the
+external module's Makefile (`KBUILD_OPTIONS +=`) — no defconfig
+fragment needed.
+
+**Option B — defconfig fragment:**
+Some configs (especially gates that affect compile-time behavior of
+in-tree code, not just out-of-tree modules) need to land in
+`kernel/oneplus/sm8850/arch/arm64/configs/lineage_genksyms_workaround.config`
+or a sibling fragment. This applies if:
+- An in-tree driver `#ifdef`s on the symbol
+- Modpost's whitelist trim depends on it being known to Kconfig
+
+**Option C — Bazel `local_defines` only:**
+If the symbol is defined via Bazel `local_defines = [...]` and is
+purely a `-DCONFIG_X` macro pass (no Kconfig backing it on the OEM
+side either), translate to `ccflags-y += -DCONFIG_X` in the Kbuild.
+This is appropriate for small per-module flags that don't need to
+participate in `make menuconfig`.
+
+**Anti-pattern:** `#ifdef`-stubbing the use sites in source. Don't.
+
+---
+
 ## Step 4 — Wire into the device tree
 
 In `device/oneplus/sm8850-common/BoardConfigCommon.mk`, append the
@@ -165,50 +209,96 @@ for the only current case). Most modules don't need this.
 
 ---
 
-## Step 5 — Build and validate
+## Step 5 — Static check (run BEFORE the build)
+
+Before spending a kernel-rebuild cycle, run the static translation
+checker. Catches missing source files, name typos, and missing
+dependencies in seconds rather than minutes.
+
+```bash
+python3 kernel/oneplus/sm8850-modules/tools/jm2/bazel_kbuild_diff.py \
+    --bazel kernel/oneplus/sm8850-modules/vendor/<subsystem>/oplus_local_modules.bzl \
+    --kbuild kernel/oneplus/sm8850-modules/vendor/<subsystem>/<dir>/Kbuild
+```
+
+Expect either `OK: no discrepancies found` or specific flagged items.
+The diff covers the WHOLE BUILD.bazel — if you've only wired one
+module from a multi-module bzl, expect "missing obj-m" errors for
+the others. That's correct behavior; ignore them and check that
+your one module isn't flagged.
+
+When wiring up a parent-tree dir (one Kbuild that produces all
+modules in the subsystem), the diff should come back clean.
+
+---
+
+## Step 6 — Build
 
 ```bash
 ~/android/iter_kernel.sh <iteration_tag>
 ```
 
-Expected outcome (for a single new module):
-
+Expected:
 - mka kernel exits 0
 - A `<MODULE>.ko` lands at
   `out/target/product/infiniti/obj/PACKAGING/kernel_modules_intermediates/lib/modules/<release>/updates/<MODULE>.ko`
-- Run validator:
-  ```bash
-  python3 kernel/oneplus/sm8850-modules/tools/jm2/kmod_validate.py \
-      --symvers out/target/product/infiniti/obj/KERNEL_OBJ/Module.symvers \
-      $(find kernel/oneplus/sm8850-modules -name Module.symvers \
-        -printf -- '--symvers %p\n' | tr -d \\n) \
-      --stablelist kernel/oneplus/sm8850/android/abi_gki_aarch64_oneplus_15 \
-      --header \
-      out/.../updates/<MODULE>.ko
-  ```
-- Verdict should be `pass`. Any `fail-*` means iterate:
-  - `fail-no-vermagic` → kernel build issue (Phase H regression?)
-  - `fail-vermagic-mismatch` → built against a different kernel; rebuild
-  - `fail-crc-mismatch` → impossible for a same-build module unless
-    a dep is wrong; check KBUILD_EXTRA_SYMBOLS
-  - `fail-crc-unknown-symbol` → missing inter-module symvers; add to
-    KBUILD_EXTRA_SYMBOLS
-  - `fail-unresolved-imports` → check if the consumer's missing a
-    KBUILD_EXTRA_SYMBOLS, or if the source uses a kernel-internal
-    symbol that needs adding to `android/abi_gki_aarch64_oneplus_15_extras`
+
+**Always confirm the `.ko` exists before declaring success.** A
+silently-mismatched CONFIG name produces no `.ko` while `mka kernel`
+still exits 0. The build is a no-op without the obj-y/m hookup.
 
 ---
 
-## Step 6 — Cross-check against the BUILD.bazel
+## Step 7 — Per-module validation
+
+Use the wrapper (no need to hand-construct the find/symvers args):
 
 ```bash
-python3 kernel/oneplus/sm8850-modules/tools/jm2/bazel_kbuild_diff.py \
-    --bazel kernel/oneplus/sm8850-modules/vendor/oplus/kernel/dfr/oplus_local_modules.bzl \
-    --kbuild kernel/oneplus/sm8850-modules/vendor/oplus/kernel/dfr/common/keyevent_handler/Kbuild
+kernel/oneplus/sm8850-modules/tools/jm2/validate_module.sh \
+    out/target/product/infiniti/obj/PACKAGING/kernel_modules_intermediates/lib/modules/<release>/updates/<MODULE>.ko
 ```
 
-Expect either `OK: no discrepancies found` (typical for clean wire-ups)
-or specific flagged items requiring manual review.
+Wrapper behavior:
+- Auto-discovers all `Module.symvers` files in the modules tree
+- Passes the canonical kernel symvers + every external's symvers
+- Outputs the kmod_validate CSV row + stderr summary
+- Exits 0 if verdict is `pass`, 1 otherwise
+
+If the verdict isn't `pass`, the failure-mode taxonomy:
+- `fail-no-vermagic` → kernel build regression (Phase H broke?)
+- `fail-vermagic-mismatch` → built against a different kernel; rebuild
+- `fail-crc-mismatch` → impossible for a same-build module unless a
+  dep is wrong; check KBUILD_EXTRA_SYMBOLS
+- `fail-crc-unknown-symbol` → missing inter-module symvers; add to
+  KBUILD_EXTRA_SYMBOLS
+- `fail-unresolved-imports` → consumer missing a KBUILD_EXTRA_SYMBOLS,
+  OR the source uses a kernel-internal symbol that needs adding to
+  `android/abi_gki_aarch64_oneplus_15_extras`, OR the consumer needs
+  a new EXPORT_SYMBOL added to in-tree code (see EXPORT_SYMBOL_HANDLING.md)
+
+---
+
+## Step 8 — Confirm the OEM-kernel-prebuilt fallback still works
+
+Each commit must keep the `BOARD_VENDOR_KERNEL_MODULES` (OEM-prebuilt
+wildcard) path green so we can always retreat to a flashable build.
+
+Concrete check: build the device tree's fallback hybrid and verify
+depmod is clean:
+
+```bash
+# This builds the ROM with the wildcard prebuilt set still in scope.
+~/android/iter_brunch.sh fallback_check_<tag>
+# After it completes, confirm depmod did not error:
+grep -E "depmod.*ERROR|ERROR.*depmod" build_logs/build_brunch_fallback_check_<tag>.log
+```
+
+If your wire-up overwrites a same-named OEM prebuilt at install time
+(via `kernel/oneplus/sm8850-modules` → `vendor_dlkm/lib/modules/`),
+this is fine — it's the expected pattern. But if depmod surfaces
+unresolved-symbol errors that the OEM prebuilt set was satisfying
+before, you've broken the fallback and need to address it (likely
+by adding the symbol to `abi_gki_aarch64_oneplus_15_extras`).
 
 ---
 
