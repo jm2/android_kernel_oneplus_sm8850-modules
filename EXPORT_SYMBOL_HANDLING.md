@@ -14,22 +14,82 @@ allowed-scope-expansion rule from `IMPLEMENTATION_PLAN.md` §12.
 
 ## When to add an EXPORT_SYMBOL
 
-When `kmod_validate.py` reports `fail-unresolved-imports` AND the
-unresolved symbol exists in our kernel source but isn't currently
-exported, that's the trigger. Workflow:
+`kmod_validate.py` reporting `fail-unresolved-imports` is the entry
+signal — but it's NOT automatically a trigger to add a kernel-side
+export. Triage the unresolved symbol through this ladder; reach for
+EXPORT_SYMBOL only at the bottom:
 
-1. Find where the symbol is defined in the kernel source
-   (`grep -rn 'static.*<symbol>(' kernel/oneplus/sm8850/`).
-2. If it's `static` — promote to non-static AND add `EXPORT_SYMBOL` /
-   `EXPORT_SYMBOL_GPL`.
-3. If it's already non-static — just add the export.
-4. Confirm the symbol is NOT already on the AOSP stablelist
-   (`grep -E "^  <symbol>$" kernel/oneplus/sm8850/gki/aarch64/symbols/*` —
-   should return nothing for additions; if it returns a hit, the
-   stablelist is supposed to bring it through; check whether it's
-   actually being exported).
+1. **Is the symbol already exported by another external module?**
+   ```
+   grep -rn 'EXPORT_SYMBOL.*<symbol>' kernel/oneplus/sm8850-modules/vendor/
+   ```
+   If yes → the consumer module is missing a `KBUILD_EXTRA_SYMBOLS`
+   pointer at the producer's `Module.symvers`. Fix the
+   external-module Makefile, not the kernel. **Don't add a redundant
+   kernel export.**
+
+2. **Is the symbol on the AOSP qcom/oplus/base stablelist?**
+   ```
+   grep -E "^  <symbol>$" kernel/oneplus/sm8850/gki/aarch64/symbols/*
+   ```
+   If yes → it's supposed to come through the GKI mechanism. Trim
+   removed it because our local whitelist file
+   (`android/abi_gki_aarch64_oneplus_15`) is missing it. Add it to
+   the union (or the `_extras` file if the AOSP file misses it for
+   our particular config). **Don't add a redundant kernel export.**
+
+3. **Could this be a `static inline` in a shared header instead?**
+   For small private helpers (one-liner getters, predicate functions,
+   bit-manipulation utilities), the right answer is to move the
+   definition to a header in `include/linux/<module>/` (or the
+   subsystem's local include dir) as `static inline`. The consumer
+   `#include`s it directly; no kernel export added. This is the
+   preferred answer when the symbol is small and clearly auxiliary.
+   **Don't EXPORT what should be a header inline.**
+
+4. **Only after 1–3 are ruled out** — promote to non-static and add
+   `EXPORT_SYMBOL` (or `EXPORT_SYMBOL_GPL` if GPL surface). Workflow:
+   - Find where the symbol is defined in the kernel source
+     (`grep -rn 'static.*<symbol>(' kernel/oneplus/sm8850/`).
+   - **Read the function carefully before promoting** (see ABI
+     commitment caveat below).
+   - If `static` → drop `static` AND add the export.
+   - If already non-static → just add the export.
+   - Add an entry to `kernel_export_additions.md` (see Bookkeeping).
 
 ---
+
+## ABI commitment caveat (read before promoting any `static`)
+
+When you drop `static` and add `EXPORT_SYMBOL`, you commit to the
+function's current signature as ABI:
+
+- For Lineage-private exports (those that stay in our jm2 fork), this
+  is mostly fine — we control both producer and consumers.
+- For exports we submit upstream, the signature you submit becomes
+  the long-term contract. Future kernel updates that would otherwise
+  freely refactor the static helper now have to preserve compat.
+
+Before promoting, read the function and ask:
+- **Was it intentionally static?** Tell-tale signs: it takes opaque
+  internal pointers (e.g., `struct fs_struct *`), exposes
+  implementation details that aren't part of any external API
+  surface, or has a comment hinting at internals (`/* internal use
+  only */`, `/* helper for foo() */`).
+- **Does its signature look refactor-vulnerable?** If it takes many
+  internal-struct pointers or returns an internal type, the
+  signature will likely change in future upstream churn.
+- **Is there a more stable wrapper above it?** Often the static
+  helper is below a non-static API that's already exported.
+  Consumer should call the wrapper, not the helper.
+
+If any of these hold, prefer the header-inline path (item 3 in the
+trigger ladder) or pursue an upstream refactor that exposes a
+stable-by-design wrapper, rather than promoting the internal
+helper as-is.
+
+When you do promote, document the rationale in the per-export
+commit message (Per-addition commit format below).
 
 ## Anti-patterns
 
@@ -37,15 +97,23 @@ exported, that's the trigger. Workflow:
   Each addition gets its own commit. Reasons: makes upstream
   cherry-picking trivial; trivializes reverts if a wave gets dropped;
   keeps the wave wire-up's diff scoped to "bazel-to-kbuild translation."
+  Treat this rule as non-negotiable; an agent should reject its own
+  work if it bundles an EXPORT into a wire-up commit.
 - ❌ **Don't add EXPORT for a symbol already on the qcom/oplus
   stablelist.** If KMI-strict trim removed it from `Module.symvers`,
   the right fix is checking that it's in our whitelist file
   (`android/abi_gki_aarch64_oneplus_15`), not adding a redundant
   EXPORT. wave_gate.py asserts this.
+- ❌ **Don't add EXPORT for a symbol already exported by another
+  external module** (the re-export case). Fix the consumer's
+  `KBUILD_EXTRA_SYMBOLS` instead.
 - ❌ **Don't EXPORT functions that should be `static inline` in a
   header.** Many "private" helpers belong in headers, not in the
   exported surface. Check whether the consumer should `#include` a
   header instead.
+- ❌ **Don't promote a `static` to exported without reading the
+  function for ABI-stability signals.** See "ABI commitment caveat"
+  above.
 
 ---
 
