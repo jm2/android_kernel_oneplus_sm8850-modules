@@ -400,6 +400,82 @@ camera).
 
 ---
 
+## dt_consistency_check.py: extend to flag compatibles with no DT node
+
+**Surfaced:** 2026-05-03 during 2H prep correction cycle.
+
+**Context:** Prep section originally claimed 2 of 4 oplus_network
+modules' compatibles weren't in canoe DT. Wider grep (including
+`kernel_platform/qcom/opensource/devicetree/oplus/`) found them in
+`infiniti_overlay_common.dtsi`. The original narrower grep would
+have produced a false-negative "won't probe" report if the user
+hadn't pushed back. The right fix isn't more careful manual greps;
+it's mechanizing the check.
+
+**Tool gap:** Current `dt_consistency_check.py` validates phandle-
+reachability — does a phandle in a loaded module's source point at
+a producer that's also loadable? It does NOT check the inverse: if
+a driver declares a `compatible = "X"`, is there at least one DT
+node with `compatible = "X"` somewhere in the as-shipped DT?
+
+**Concrete tasks:**
+
+1. Add `--check-compat-orphans` mode to dt_consistency_check.py
+   (or peer tool `dt_compat_orphan_check.py` — judgment call when
+   we get there).
+2. Inputs: source-tree root (for `of_match_table` extraction via
+   regex on `.compatible = "..."`), DT roots (canoe-kernel-dts/ +
+   `kernel_platform/qcom/opensource/devicetree/oplus/` + any future
+   overlay dirs).
+3. Output: CSV listing each driver's compatibles, whether each
+   resolved to ≥1 DT node, and verdict (`pass-bound` / `orphan` /
+   `bound-via-overlay-X`).
+4. Useful for surfacing genuinely dead modules (modules.load
+   contains them, but nothing in DT binds, and no userspace trigger
+   maps either).
+
+**When to build:** After 2D, alongside the symbol-signature checker
+decision (currently both deferred until concrete bug instances
+surface — 2H gave us only a false-negative-near-miss, not a real
+bug to specify against).
+
+---
+
+## noop_modules.md tracking across Wave 2
+
+**Surfaced:** 2026-05-03 (2H prep, rf_cable_monitor finding).
+
+**Context:** `oplus_network_rf_cable_monitor.ko` is a 30 KB module
+in OEM `modules.load` whose only behavior is `op_rf_cable_init()
+{return 0;}` and an empty exit. No platform_driver, no probe, no
+sysfs hooks. The OEM ships it for build-graph completeness; it does
+nothing on the device.
+
+**Implication:** "In modules.load" is not a reliable proxy for
+"functionally required." Some Wave 2 modules may be similarly
+empty, which means our wire-up effort scales sublinearly with
+apparent surface area for those modules.
+
+**Concrete tasks:**
+
+1. Maintain `noop_modules.md` listing source-built modules whose
+   init/exit return 0 and have no platform_driver/file_operations/
+   sysfs registration.
+2. After Wave 2 closes, count and list. If the count is non-trivial
+   (>10), file a downstream-optimization task for `vendor_dlkm`
+   slimming.
+3. The check is detectable statically: parse the .c file for
+   `module_init/exit` macros and trace what those functions
+   actually do; or `nm` the built .ko and look for absence of
+   `__platform_driver_register`, `proc_create`, `device_create_file`,
+   etc.
+
+**When to build:** Tracking starts now (manual entries in
+`noop_modules.md`). Tool only if count grows enough to make manual
+inspection expensive.
+
+---
+
 ## Format
 
 To add new entries:
