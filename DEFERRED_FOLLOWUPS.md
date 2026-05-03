@@ -263,6 +263,143 @@ organically), OR after 4 waves accumulate (whichever comes first).
 
 ---
 
+## Display-cluster export gaps surfaced by exports_superset_check (2026-05-02)
+
+**Surfaced:** 2026-05-02 by exports_superset_check.py smoke run on
+the latest source-built corpus. Both modules pre-date Wave 2 (built
+during Phase B of the original bring-up). Latent since whenever the
+display cluster was first source-built; would have manifested at
+Phase 6 hardware test as "display works in some configs and not
+others" or "display drivers probe but rendering paths fail."
+
+**Diagnosis (each ≤30 min, characterization done):**
+
+### msm_drm: 321 missing exports
+
+- 80/401 source-built/OEM. 296 of 321 missing are `iris_*` symbols
+  (Pixelworks Iris7P display visual-processor extensions).
+- Source files present at
+  `vendor/qcom/opensource/display-drivers/msm/iris/{core,vendor}/{common,iris7p}/*.c`
+  (40+ files).
+- OEM `targets/canoe.bzl` (lines 46–49) enables `CONFIG_PXLW_IRIS`
+  + `CONFIG_PXLW_IRIS7P`. Bazel-flow honors these and pulls in the
+  iris .o files (gated in `display_modules.bzl` line 194+).
+- Our Kbuild path uses `config/gki_canoedispconf.h` which does NOT
+  define `CONFIG_PXLW_IRIS` or `CONFIG_PXLW_IRIS7P`. Result:
+  `msm/Kbuild` lines 102 + 349 (`ifeq (${CONFIG_PXLW_IRIS},y)`)
+  short-circuit; iris source isn't compiled into msm_drm.ko.
+- Class: **config-gating misalignment** (Bazel→Kbuild translation
+  incompleteness from Phase B). Same family as 2C; different
+  specific knob. NOT OPLUS_ARCH_EXTENDS-class.
+- Note: gates are `=y` (built-in) not `=m` (separate module). Iris
+  is statically linked into msm_drm.ko in the OEM build.
+
+### msm_hw_fence: 5 missing exports
+
+- 17/22 source-built/OEM. 5 missing are all `synx_hwfence_*`
+  (synx-fence interop layer between hw_fence and synx subsystems).
+- Source files present at
+  `vendor/qcom/opensource/mm-drivers/hw_fence/src/hw_fence_drv_interop.c`
+  and `src/msm_hw_fence_synx_translation.c`.
+- Current `vendor/qcom/opensource/mm-drivers/hw_fence/Kbuild`
+  defines `msm_hw_fence-y :=` over a fixed list of 5 .o files;
+  the two synx-related .c files are NOT in the list.
+- Class: **Kbuild obj-list incompleteness** (subset of config-gating
+  family). Same root cause: Phase B Bazel→Kbuild translation
+  missed the synx-translation cluster of source files.
+
+**Concrete tasks (Phase H+1 patch series, before Wave 2 closes):**
+
+1. **msm_drm**:
+   - Add `export CONFIG_PXLW_IRIS=y` and `export
+     CONFIG_PXLW_IRIS7P=y` to `config/gki_canoedisp.conf`.
+   - Add `#define CONFIG_PXLW_IRIS 1` and `#define CONFIG_PXLW_IRIS7P 1`
+     to `config/gki_canoedispconf.h`.
+   - Verify EXTRA_CFLAGS / include paths are wired so iris source
+     can find `msm/iris/core/include/`, `msm/iris/vendor/`,
+     `msm/iris/core/{common,iris7p}/`. Mirror the Bazel
+     `iris_core_headers` / `iris_vendor_headers` cc_library
+     include paths into `msm/Kbuild` PWATOP setup if needed.
+   - Verify iris source has no `#ifdef OPLUS_ARCH_EXTENDS` gates;
+     if it does, lift `OPLUS_ARCH_EXTENDS` define into the disp
+     autoconf header (analogous to canoeautoconf.h fix in 2C v3).
+   - Re-run exports_superset_check; expect msm_drm verdict
+     `pass-exact` or `pass-additive`.
+   - Effort: half-day (likely; full day if include-path or
+     ARCH_EXTENDS wrinkle).
+
+2. **msm_hw_fence**:
+   - Add `src/hw_fence_drv_interop.o` and
+     `src/msm_hw_fence_synx_translation.o` to `msm_hw_fence-y` in
+     `vendor/qcom/opensource/mm-drivers/hw_fence/Kbuild`.
+   - Verify `-I$(MSM_HW_FENCE_ROOT)../synx-kernel/...` include
+     paths (already wired in Kbuild) suffice for the new files.
+   - Re-run exports_superset_check; expect `pass-exact`.
+   - Effort: 30–60 min.
+
+**Rationale for deferring (not blocking Wave 2 close):** Both gaps
+are pre-existing (Phase B latent); no Wave 2 sub-wave depends on
+them. Folding into a Phase H+1 patch series after 2H/2D/2F
+finish keeps Wave 2 momentum + lets the agent batch the OPLUS_ARCH_EXTENDS
+audit step across all three modules at once.
+
+**When to revisit:** As soon as 2H/2D/2F land, before Wave 2
+release-candidate tag, before Phase 6 hardware test. Hard
+prerequisite for Phase 6 — display latent bugs in hardware test
+context cost an order of magnitude more to root-cause than fixing
+the build now.
+
+---
+
+## Symbol-signature mismatch checker (next-most-likely pre-flash gap)
+
+**Surfaced:** 2026-05-02 by Opus Web review post-exports_superset_check.
+
+**Context:**
+The static-check pair (dt_consistency_check + exports_superset_check)
+catches structural mismatches: missing producers, missing exports.
+Neither catches **signature** mismatch: source-built module exports
+`int foo(struct bar *)` while OEM expects `int foo(struct baz *)`.
+Both depmod and superset-check pass; consumer crashes at runtime
+when it dereferences the wrong struct.
+
+The kernel's CRC __versions section is supposed to catch this at
+modprobe time, but only if both producer and consumer were compiled
+against the same header — for OEM-prebuilt-consumer + source-built-
+producer, the OEM's __versions CRCs and our genksyms-generated CRCs
+are computed against different header contents and may diverge even
+when the actual ABI is compatible (or, worse, may agree when it
+isn't, given hash collisions or whitelist trim).
+
+**Concrete tasks (if/when this bug class trips):**
+1. Build `tools/jm2/symbol_signature_check.py` peer to
+   exports_superset_check. For each shared export between source-built
+   and OEM .ko, extract the corresponding `__crc_<name>` value (kernel
+   genksyms CRC) and compare. Flag any divergence as a
+   `signature-divergence` verdict.
+2. Output: CSV with module / symbol / src_crc / oem_crc / verdict.
+3. Initially advisory (warn-only): we don't yet know how often
+   benign CRC divergence happens for ABI-compatible signatures.
+
+**Rationale for deferring proactively:**
+Cost of being wrong about WHICH bug class bites next is real. The
+two static checkers we built were both built reactively after a
+specific bug surfaced — and each landed in <1 day with high
+confidence in correctness. Building a signature-mismatch tool
+proactively means investing time in a tool we may never need, OR
+that has a high false-positive rate that requires a second
+calibration pass. Better to wait until the bug class actually trips.
+
+**Reopen trigger:** First sub-wave where a source-built module has
+all expected exports (passes exports_superset_check) and clean
+depmod (passes vermagic + CRC) but a runtime issue surfaces that
+roots to ABI signature divergence between source-built and OEM
+builds. Most likely subsystems: subsystems with structural-header
+divergence between OEM patches and AOSP-aligned headers (DRM, KGSL,
+camera).
+
+---
+
 ## Format
 
 To add new entries:
