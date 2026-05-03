@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-only
+ccflags-y += -DQCOM_PLATFORM \
+             -DCONFIG_OPLUS_FINGERPRINT_GKI_ENABLE \
+             -DCONFIG_TOUCHPANEL_NOTIFY
+ccflags-y += -I$(srctree)/../sm8850-modules/vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2/touchpanel_notify
+ccflags-y += -I$(srctree)/../sm8850-modules/vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2
+
+MODULE = oplus_bsp_uff_fp_driver
+$(MODULE)-objs := \
+    fp_driver.o \
+    fp_platform.o \
+    fingerprint_event.o \
+    fp_health.o \
+    fp_netlink.o
+obj-m += $(MODULE).o

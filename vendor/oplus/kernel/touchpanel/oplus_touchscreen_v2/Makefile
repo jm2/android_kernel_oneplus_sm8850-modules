@@ -1,46 +1,23 @@
-#
-# Makefile for the touchscreen drivers.
-#
-subdir-ccflags-$(CONFIG_TOUCHPANEL_MTK_PLATFORM) += -I$(srctree)/drivers/misc/mediatek/include/
-subdir-ccflags-$(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY) += -I$(srctree)/drivers/misc/mediatek/include/
+# SPDX-License-Identifier: GPL-2.0-only
+# External Bazel ko_deps for the touch cluster (auto-merged internal
+# symvers stay implicit because all 22 modules share this M= dir):
+#   oplusboot           (bundled into oplus_bsp_cmdline_parser)
+#   oplus_bsp_bootmode
+#   oplus_bsp_boot_projectinfo
+#   panel_event_notifier (kernel-internal — auto-resolved by KERNEL_SRC)
+#   device_info
+#   oplus_bsp_tp_notify
+#   oplus_bsp_fw_update
+KBUILD_EXTRA_SYMBOLS := \
+    $(abspath $(CURDIR)/../../boot/cmdline_parser/Module.symvers) \
+    $(abspath $(CURDIR)/../../boot/bootmode/Module.symvers) \
+    $(abspath $(CURDIR)/../../boot/oplus_projectinfo/qcom/Module.symvers) \
+    $(abspath $(CURDIR)/../../device_info/device_info/Module.symvers) \
+    $(abspath $(CURDIR)/../touchpanel_notify/Module.symvers) \
+    $(abspath $(CURDIR)/../kernelFwUpdate/Module.symvers)
+export KBUILD_EXTRA_SYMBOLS
 
-ifeq ($(OPLUS_FEATURE_BSP_DRV_INJECT_TEST),1)
-ccflags-y += -DCONFIG_TOUCHPANEL_FAULT_INJECT_ENABLE
-$(info OPLUS_FEATURE_BSP_DRV_INJECT_TEST and CONFIG_TOUCHPANEL_FAULT_INJECT_ENABLE is Y)
-else ifeq ($(OPLUS_FEATURE_BSP_DRV_VND_INJECT_TEST),1)
-ccflags-y += -DCONFIG_TOUCHPANEL_FAULT_INJECT_ENABLE
-$(info OPLUS_FEATURE_BSP_DRV_VND_INJECT_TEST and CONFIG_TOUCHPANEL_FAULT_INJECT_ENABLE is Y)
-else
-$(info CONFIG_TOUCHPANEL_FAULT_INJECT_ENABLE is N)
-endif
-
-oplus_bsp_tp_comon-y := util_interface/touch_interfaces.o
-oplus_bsp_tp_comon-y += touch_comon_api/touch_comon_api.o
-oplus_bsp_tp_comon-y += touchpanel_healthinfo/touchpanel_healthinfo.o
-oplus_bsp_tp_comon-y += touchpanel_healthinfo/touchpanel_exception.o
-oplus_bsp_tp_comon-y += touchpanel_autotest/touchpanel_autotest.o
-oplus_bsp_tp_comon-y += touchpanel_prevention/touchpanel_prevention.o
-
-oplus_bsp_tp_comon-y += touchpanel_common_driver.o
-oplus_bsp_tp_comon-y += touchpanel_proc.o
-oplus_bsp_tp_comon-y += tp_ioctl.o
-oplus_bsp_tp_comon-y += message_list.o
-oplus_bsp_tp_comon-y += touch_pen/touch_pen_core.o
-oplus_bsp_tp_comon-y += touch_pen/touch_pen_algo.o
-
-obj-$(CONFIG_TOUCHPANEL_OPLUS) += oplus_bsp_tp_comon.o
-
-oplus_bsp_tp_notify-y += touchpanel_notify/touchpanel_event_notify.o
-oplus_bsp_tp_comon-y += touchpanel_tui_support/touchpanel_tui_support.o
-obj-$(CONFIG_TOUCHPANEL_NOTIFY) += oplus_bsp_tp_notify.o
-
-obj-$(CONFIG_TOUCHPANEL_SYNAPTICS) += Synaptics/
-obj-$(CONFIG_TOUCHPANEL_FOCAL) += Focal/
-obj-$(CONFIG_TOUCHPANEL_GOODIX) += Goodix/
-obj-$(CONFIG_TOUCHPANEL_NOVA) += Novatek/
-obj-$(CONFIG_TOUCHPANEL_HIMAX) += Himax/
-obj-$(CONFIG_TOUCHPANEL_SAMSUNG) += Samsung/
-obj-$(CONFIG_TOUCHPANEL_ILITEK) += ilitek/
-obj-$(CONFIG_TOUCHPANEL_JADARD) += Jadard/
-obj-$(CONFIG_TOUCHPANEL_ST) += St/
-obj-$(CONFIG_TOUCHPANEL_CHIPONE) += chipone/
+KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
+M ?= $(shell pwd)
+modules modules_install clean:
+	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(@)

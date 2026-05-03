@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-2.0-only
+ccflags-y += -I$(src) -I$(src)/utils -I$(src)/chips -I$(src)/chips/synaptics/s3910 -I$(src)/chips/synaptics/s3910/tcm
+ccflags-y += -DBUILD_BY_BAZEL -DCONFIG_QCOM_PANEL_EVENT_NOTIFIER
+
+# oplus_hbp_core (foundation)
+obj-m += oplus_hbp_core.o
+oplus_hbp_core-y := \
+    hbp_core.o \
+    hbp_notify.o \
+    hbp_tui.o \
+    hbp_frame.o \
+    utils/debug.o \
+    utils/platform.o \
+    chips/touch_custom.o \
+    hbp_device.o \
+    hbp_power.o \
+    hbp_spi.o \
+    hbp_sysfs.o \
+    hbp_exception.o \
+    hbp_healthinfo.o
+
+# oplus_bsp_tp_hbp_syna_s3910 (deps oplus_hbp_core; auto-merged in this M dir)
+obj-m += oplus_bsp_tp_hbp_syna_s3910.o
+oplus_bsp_tp_hbp_syna_s3910-y := \
+    chips/synaptics/s3910/syna_tcm2.o \
+    chips/synaptics/s3910/syna_tcm2_sysfs.o \
+    chips/synaptics/s3910/tcm/synaptics_touchcom_core_v1.o \
+    chips/synaptics/s3910/tcm/synaptics_touchcom_core_v2.o \
+    chips/synaptics/s3910/tcm/synaptics_touchcom_func_base.o \
+    chips/synaptics/s3910/tcm/synaptics_touchcom_func_touch.o \
+    chips/synaptics/s3910/tcm/synaptics_touchcom_func_reflash.o \
+    chips/synaptics/s3910/tcm/synaptics_touchcom_func_romboot.o

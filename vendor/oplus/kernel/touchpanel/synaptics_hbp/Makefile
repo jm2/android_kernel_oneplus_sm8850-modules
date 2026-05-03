@@ -1,37 +1,19 @@
-#
-# Makefile for the Synaptics TCM touchscreen driver.
-#
+# SPDX-License-Identifier: GPL-2.0-only
+# Bazel ko_deps:
+#   //vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2:oplus_bsp_tp_custom
+#   plus oplusboot, bootmode, projectinfo, panel_event_notifier (soc-repo),
+#   device_info, oplus_bsp_tp_notify, oplus_bsp_fw_update
+KBUILD_EXTRA_SYMBOLS := \
+    $(abspath $(CURDIR)/../oplus_touchscreen_v2/Module.symvers) \
+    $(abspath $(CURDIR)/../touchpanel_notify/Module.symvers) \
+    $(abspath $(CURDIR)/../kernelFwUpdate/Module.symvers) \
+    $(abspath $(CURDIR)/../../boot/cmdline_parser/Module.symvers) \
+    $(abspath $(CURDIR)/../../boot/bootmode/Module.symvers) \
+    $(abspath $(CURDIR)/../../boot/oplus_projectinfo/qcom/Module.symvers) \
+    $(abspath $(CURDIR)/../../device_info/device_info/Module.symvers)
+export KBUILD_EXTRA_SYMBOLS
 
-# Each configuration option enables a list of files.
-subdir-ccflags-$(CONFIG_TOUCHPANEL_MTK_PLATFORM) += -I$(srctree)/drivers/misc/mediatek/include/
-subdir-ccflags-$(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY) += -I$(srctree)/drivers/misc/mediatek/include/
-
-
-TCM_CORE=tcm/
-ccflags-y += -I$(srctree)/drivers/input/touchscreen/synaptics_hbp/
-ccflags-y += -I$(srctree)/drivers/input/touchscreen/synaptics_hbp/tcm/
-
-subdir-ccflags-$(CONFIG_TOUCHPANEL_MTK_PLATFORM) += -I$(srctree)/drivers/misc/mediatek/include/
-subdir-ccflags-$(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY) += -I$(srctree)/drivers/misc/mediatek/include/
-
-synaptics_tcm2-y := syna_tcm2.o
-
-synaptics_tcm2-y += \
-					$(TCM_CORE)synaptics_touchcom_core_v1.o \
-					$(TCM_CORE)synaptics_touchcom_core_v2.o \
- 					$(TCM_CORE)synaptics_touchcom_func_base.o \
- 					$(TCM_CORE)synaptics_touchcom_func_touch.o \
-					$(TCM_CORE)synaptics_touchcom_func_reflash.o \
-					$(TCM_CORE)synaptics_touchcom_func_romboot.o
-
-synaptics_tcm2-y += syna_tcm2_platform_spi.o
-synaptics_tcm2-y += syna_tcm2_sysfs.o
-synaptics_tcm2-y += syna_tcm2_testing.o
-synaptics_tcm2-y += synaptics_common.o
-synaptics_tcm2-y += touchpanel_proc.o
-synaptics_tcm2-y += touch_comon_api/touch_comon_api.o
-synaptics_tcm2-y += touchpanel_autotest/touchpanel_autotest.o
-synaptics_tcm2-y += touchpanel_healthinfo/touchpanel_healthinfo.o
-synaptics_tcm2-y += touchpanel_healthinfo/touchpanel_exception.o
-
-obj-$(CONFIG_TOUCHSCREEN_SYNA_TCM2) += synaptics_tcm2.o
+KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
+M ?= $(shell pwd)
+modules modules_install clean:
+	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(@)

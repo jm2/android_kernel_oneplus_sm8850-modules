@@ -1,0 +1,140 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Touch cluster dispatcher: 22 modules from one M= dir.
+# Internal symvers (e.g. tp_custom -> tp_common -> vendor commons -> per-chip
+# leaves) auto-merge because they all build under the same M= invocation.
+# External deps (cmdline_parser, bootmode, projectinfo, device_info,
+# tp_notify, fw_update) come in via KBUILD_EXTRA_SYMBOLS in Makefile.
+
+ccflags-y += -I$(src) -I$(src)/touchpanel_notify
+ccflags-y += -DCONFIG_TOUCHPANEL_NOTIFY \
+             -DCONFIG_TOUCHPANEL_OPLUS_MODULE \
+             -DCONFIG_QCOM_PANEL_EVENT_NOTIFIER \
+             -DCONFIG_OPLUS_FEATURE_OPROJECT
+
+# --- Foundation tier ---
+
+obj-m += oplus_bsp_tp_custom.o
+oplus_bsp_tp_custom-y := touch_custom/touch.o
+
+obj-m += oplus_bsp_tp_common.o
+oplus_bsp_tp_common-y := \
+    util_interface/touch_interfaces.o \
+    touch_comon_api/touch_comon_api.o \
+    touchpanel_healthinfo/touchpanel_healthinfo.o \
+    touchpanel_healthinfo/touchpanel_exception.o \
+    touchpanel_autotest/touchpanel_autotest.o \
+    touchpanel_prevention/touchpanel_prevention.o \
+    touchpanel_common_driver.o \
+    touchpanel_proc.o \
+    tp_ioctl.o \
+    touchpanel_tui_support/touchpanel_tui_support.o \
+    message_list.o \
+    touch_pen/touch_pen_core.o \
+    touch_pen/touch_pen_algo.o
+
+# --- Vendor common tier ---
+
+obj-m += oplus_bsp_tp_focal_common.o
+oplus_bsp_tp_focal_common-y := Focal/focal_common.o
+
+obj-m += oplus_bsp_tp_goodix_comnon.o
+oplus_bsp_tp_goodix_comnon-y := \
+    Goodix/gtx8_tools.o \
+    Goodix/goodix_common.o
+
+obj-m += oplus_bsp_tp_ilitek_common.o
+oplus_bsp_tp_ilitek_common-y := ilitek/ilitek_common.o
+
+obj-m += oplus_bsp_tp_novatek_common.o
+oplus_bsp_tp_novatek_common-y := Novatek/novatek_common.o
+
+obj-m += oplus_bsp_tp_syna_common.o
+oplus_bsp_tp_syna_common-y := \
+    Synaptics/synaptics_touch_panel_remote.o \
+    Synaptics/synaptics_common.o
+
+# --- Per-chip leaves: Focal ---
+
+obj-m += oplus_bsp_tp_ft3683g.o
+oplus_bsp_tp_ft3683g-y := \
+    Focal/ft3683g/ft3683g_driver.o \
+    Focal/ft3683g/ft3683g_test.o
+
+obj-m += oplus_bsp_tp_ft3681.o
+oplus_bsp_tp_ft3681-y := \
+    Focal/ft3681/ft3681_driver.o \
+    Focal/ft3681/ft3681_test.o
+
+obj-m += oplus_bsp_tp_ft3658u_spi.o
+oplus_bsp_tp_ft3658u_spi-y := \
+    Focal/ft3658u_spi/ft3658u_driver.o \
+    Focal/ft3658u_spi/ft3658u_test.o
+
+obj-m += oplus_bsp_tp_ft3518.o
+oplus_bsp_tp_ft3518-y := \
+    Focal/ft3518/ft3518_driver.o \
+    Focal/ft3518/ft3518_test.o
+
+obj-m += oplus_bsp_tp_ft8057p.o
+oplus_bsp_tp_ft8057p-y := \
+    Focal/ft8057p/ft8057p_driver.o \
+    Focal/ft8057p/ft8057p_test.o
+
+# --- Per-chip leaves: Goodix ---
+
+obj-m += oplus_bsp_tp_gt9966.o
+oplus_bsp_tp_gt9966-y := \
+    Goodix/GT9966/goodix_brl_core.o \
+    Goodix/GT9966/goodix_pen.o
+
+obj-m += oplus_bsp_tp_gt9916.o
+oplus_bsp_tp_gt9916-y := \
+    Goodix/GT9916/goodix_brl_core.o \
+    Goodix/GT9916/goodix_pen.o
+
+# --- Per-chip leaves: Ilitek ---
+
+obj-m += oplus_bsp_tp_ilitek7807s.o
+oplus_bsp_tp_ilitek7807s-y := \
+    ilitek/ilitek7807s/ili7807s_fw.o \
+    ilitek/ilitek7807s/ili7807s_ic.o \
+    ilitek/ilitek7807s/ili7807s_mp.o \
+    ilitek/ilitek7807s/ili7807s_node.o \
+    ilitek/ilitek7807s/ili7807s_qcom.o
+
+# --- Per-chip leaves: Novatek ---
+
+obj-m += oplus_bsp_tp_nt36672c_noflash.o
+oplus_bsp_tp_nt36672c_noflash-y := \
+    Novatek/NT36672C_noflash/nvt_drivers_nt36672c_noflash.o
+
+obj-m += oplus_bsp_tp_nt36528_noflash.o
+oplus_bsp_tp_nt36528_noflash-y := \
+    Novatek/NT36528_noflash/nvt_drivers_nt36528_noflash.o
+
+obj-m += oplus_bsp_tp_nt36532_noflash.o
+oplus_bsp_tp_nt36532_noflash-y := \
+    Novatek/NT36532_noflash/nvt_drivers_nt36532_noflash.o
+
+obj-m += oplus_bsp_tp_nt36536_noflash.o
+oplus_bsp_tp_nt36536_noflash-y := \
+    Novatek/NT36536_noflash/nvt_drivers_nt36536_noflash.o
+
+# --- Per-chip leaves: Synaptics tcm ---
+
+obj-m += oplus_bsp_tp_tcm_S3910.o
+oplus_bsp_tp_tcm_S3910-y := \
+    Synaptics/Syna_tcm_S3910/synaptics_tcm_S3910.o \
+    Synaptics/Syna_tcm_S3910/synaptics_tcm_device_S3910.o
+
+obj-m += oplus_bsp_tp_tcm_S3908.o
+oplus_bsp_tp_tcm_S3908-y := \
+    Synaptics/Syna_tcm_S3908/synaptics_tcm_S3908.o \
+    Synaptics/Syna_tcm_S3908/synaptics_tcm_device_S3908.o
+
+obj-m += oplus_bsp_tp_td4377_noflash.o
+oplus_bsp_tp_td4377_noflash-y := \
+    Synaptics/TD4377_noflash/synaptics_tcm_core.o \
+    Synaptics/TD4377_noflash/synaptics_tcm_device.o \
+    Synaptics/TD4377_noflash/synaptics_tcm_recovery.o \
+    Synaptics/TD4377_noflash/synaptics_tcm_zeroflash.o

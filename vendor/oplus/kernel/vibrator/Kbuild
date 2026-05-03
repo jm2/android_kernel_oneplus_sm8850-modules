@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: GPL-2.0-only
+ccflags-y += -I$(src) -I$(src)/haptic_feedback -I$(src)/oplus_haptic -I$(src)/oplus_haptic/haptic_common
+
+# haptic_feedback module
+obj-m += oplus_bsp_haptic_feedback.o
+oplus_bsp_haptic_feedback-y := haptic_feedback/haptic_feedback.o
+CFLAGS_haptic_feedback/haptic_feedback.o += -DCONFIG_OPLUS_FEATURE_FEEDBACK
+
+# haptic module
+obj-m += oplus_bsp_haptic.o
+oplus_bsp_haptic-y := \
+    oplus_haptic/haptic_common/haptic_common_driver.o \
+    oplus_haptic/aw_haptic/haptic_hv.o \
+    oplus_haptic/aw_haptic/aw869xx.o \
+    oplus_haptic/aw_haptic/aw8692x.o \
+    oplus_haptic/aw_haptic/aw8693xs.o \
+    oplus_haptic/si_haptic/haptic.o \
+    oplus_haptic/si_haptic/haptic_mid.o \
+    oplus_haptic/si_haptic/haptic_regmap.o \
+    oplus_haptic/si_haptic/sih688x.o \
+    oplus_haptic/si_haptic/sih688x_func_config.o \
+    oplus_haptic/si_haptic/sih688x_reg.o
+
+# Apply Bazel local_defines + conditional_defines for qcom platform to
+# all oplus_bsp_haptic objects.
+ccflags-y += -DCONFIG_AW_HAPTIC \
+             -DCONFIG_SIH_HAPTIC \
+             -DCONFIG_OPLUS_HAPTIC_COMMON \
+             -DCONFIG_HAPTIC_FEEDBACK_MODULE \
+             -DOPLUS_FEATURE_CHG_BASIC

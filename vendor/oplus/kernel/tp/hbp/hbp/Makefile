@@ -1,19 +1,13 @@
-oplus_hbp_core-y += hbp_core.o
-oplus_hbp_core-y += hbp_notify.o
-oplus_hbp_core-y += hbp_tui.o
-oplus_hbp_core-y += hbp_frame.o
-oplus_hbp_core-y += utils/debug.o
-oplus_hbp_core-y += utils/platform.o
-oplus_hbp_core-y += chips/touch_custom.o
-oplus_hbp_core-y += hbp_device.o
-oplus_hbp_core-y += hbp_power.o
-oplus_hbp_core-y += hbp_spi.o
-oplus_hbp_core-y += hbp_sysfs.o
-oplus_hbp_core-y += hbp_exception.o
-oplus_hbp_core-y += hbp_healthinfo.o
+# SPDX-License-Identifier: GPL-2.0-only
+# Bazel ko_deps:
+#   oplus_hbp_core: panel_event_notifier (kernel-internal), tp_notify, fw_update
+#   oplus_bsp_tp_hbp_syna_s3910: oplus_hbp_core (auto-merged in this M dir)
+KBUILD_EXTRA_SYMBOLS := \
+    $(abspath $(CURDIR)/../../../touchpanel/touchpanel_notify/Module.symvers) \
+    $(abspath $(CURDIR)/../../../touchpanel/kernelFwUpdate/Module.symvers)
+export KBUILD_EXTRA_SYMBOLS
 
-CFLAGS_hbp_core.o := -I$(src)
-
-obj-$(CONFIG_TOUCHSCREEN_HBP_CORE) += oplus_hbp_core.o
-
-obj-y += chips/
+KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
+M ?= $(shell pwd)
+modules modules_install clean:
+	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(@)

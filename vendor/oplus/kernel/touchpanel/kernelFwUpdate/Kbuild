@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
+MODULE = oplus_bsp_fw_update
+$(MODULE)-objs := kernelFwUpdate.o
+obj-m += $(MODULE).o

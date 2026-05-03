@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-2.0-only
+ccflags-y += -DCONFIG_TOUCHPANEL_NOTIFY \
+             -DCONFIG_TOUCHPANEL_OPLUS_MODULE \
+             -DCONFIG_OF \
+             -DBUILD_BY_BAZEL \
+             -DCONFIG_QCOM_PANEL_EVENT_NOTIFIER
+ccflags-y += -I$(src) -I$(src)/tcm
+ccflags-y += -I$(srctree)/../sm8850-modules/vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2
+
+MODULE = oplus_bsp_synaptics_tcm2
+$(MODULE)-objs := \
+    syna_tcm2.o \
+    tcm/synaptics_touchcom_core_v1.o \
+    tcm/synaptics_touchcom_core_v2.o \
+    tcm/synaptics_touchcom_func_base.o \
+    tcm/synaptics_touchcom_func_touch.o \
+    tcm/synaptics_touchcom_func_reflash.o \
+    tcm/synaptics_touchcom_func_romboot.o \
+    syna_tcm2_platform_spi.o \
+    syna_tcm2_sysfs.o \
+    syna_tcm2_testing.o \
+    synaptics_common.o \
+    touchpanel_proc.o \
+    touch_comon_api/touch_comon_api.o \
+    touchpanel_autotest/touchpanel_autotest.o \
+    touchpanel_healthinfo/touchpanel_healthinfo.o \
+    touchpanel_healthinfo/touchpanel_exception.o
+obj-m += $(MODULE).o
