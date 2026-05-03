@@ -1085,6 +1085,132 @@ file doesn't have what you need, `find ... -name '*24863*'`.)
 
 ---
 
+## Sub-wave 2H retrospective (2026-05-03)
+
+### Outcome
+
+**GREEN.** All 4 oplus_network modules source-built. Brunch v4
+exit 0 in 5:13. exports_superset_check verdict: 4/4 pass-exact.
+
+| Module | src .ko size | OEM .ko size | exports verdict |
+|---|---|---|---|
+| oplus_network_rf_cable_monitor | 31720 | 31720 | pass-exact (0/0) |
+| oplus_network_oem_qmi          | 36504 | 36504 | pass-exact (3/3) |
+| oplus_network_esim             | 41456 | 41456 | pass-exact (0/0) |
+| oplus_network_sim_detect       | 17632 | 17632 | pass-exact (0/0) |
+
+oem_qmi exports `uim_qmi_power_up_req`, `uim_qmi_power_down_req`,
+`oem_qmi_common_req` (consumed by esim and sim_detect); both src
+and OEM agree exactly.
+
+EXPORT_SYMBOL projection verified: **0** (matching pre-flight
+expectation). Five consecutive sub-waves at this rate; Wave 2
+remaining-budget recalibration holds.
+
+### Brunch run history
+
+Four iterations to green. Each iteration progressed exactly one
+bug class deeper, confirming the build is iteration-tight (not
+flakily failing):
+
+1. **v1 (2:11, fail)**: Kbuild self-reference. esim's source `.c`
+   filename matched its module name; the standard
+   `$(MODULE)-objs := <name>.o; obj-m += $(MODULE).o` form
+   produced a circular `<name>.o ← <name>.o` dependency that
+   kbuild dropped, causing `ld.lld: cannot open <name>.o`.
+   **Fix**: drop the `-objs` indirection for single-source
+   modules with matching names; use `obj-m += <name>.o` directly.
+2. **v2 (2:01, fail)**: Cross-leaf symvers visibility. esim and
+   sim_detect consume `oem_qmi`'s exports; kbuild's external-
+   module flow does NOT auto-merge sibling-leaf-module symvers.
+   **Fix v1**: `KBUILD_EXTRA_SYMBOLS += $(M)/.../Module.symvers`
+   in Kbuild.
+3. **v3 (2:32, fail)**: Path resolution silent failure. The
+   Kbuild-form path was resolved lexically by kbuild, not
+   canonically — `KERNEL_OBJ/../sm8850-modules/.../esim/../oem_qmi/Module.symvers`
+   doesn't normalize through the cross-tree `..` traversal.
+   modpost reported "unresolved symbol" not "missing symvers,"
+   making the symptom look like a missing-export bug rather than
+   a path bug. **Fix v2**: move `KBUILD_EXTRA_SYMBOLS` to the
+   Makefile using `$(abspath $(CURDIR)/...)`, matching the
+   canonical pattern in `dump_device_info/Makefile`.
+4. **v4 (5:13, GREEN)**: full ROM zip, exit 0, all 4 modules
+   built with sizes matching OEM exactly.
+
+### Lessons (added to WIRE_UP_RECIPE.md)
+
+- **KBUILD_EXTRA_SYMBOLS goes in Makefile, not Kbuild.** Kbuild
+  form has lexical-vs-canonical path-resolution silent failure
+  mode. Always use `$(abspath $(CURDIR)/...)` in Makefile.
+- **Single-source modules whose source filename matches the
+  module name** must drop the `-objs` indirection to avoid the
+  circular self-reference.
+- **Modpost's "unresolved symbol" can be a path-resolution
+  symptom**, not just a missing-export symptom. When debugging
+  a modpost fail on a module that uses `KBUILD_EXTRA_SYMBOLS`,
+  check the path-resolution layer first.
+
+### Tool fix (exports_superset_check.py)
+
+Bug found during 2H verification: classify() conflated
+"both-empty exports" with "no-oem-counterpart found." Empty/empty
+is a legitimate pass-exact (no-op stubs, leaf consumers).
+"no-oem-counterpart" should be decided exclusively by
+`find_oem_counterpart()` returning None, not by classify(). After
+fix, recalibrating against the full updates dir:
+
+| Verdict | Pre-fix | Post-fix |
+|---|---|---|
+| pass-exact | ~0 (all mis-reported) | 33 |
+| pass-additive | 1 | 1 (smcinvoke_dlkm — qseecom_* additive) |
+| no-oem-counterpart | ~36 | 4 (modules without OEM .ko) |
+| fail-missing-exports | 2 | 2 (msm_drm + msm_hw_fence — known) |
+
+The 2 fail-missing-exports are pre-existing display-cluster gaps
+already documented in DEFERRED_FOLLOWUPS.md; not 2H-caused.
+
+### no-op modules tracked (2H contribution)
+
+- `oplus_network_rf_cable_monitor` — obvious-stub class. Source
+  `op_rf_cable_init() { return 0; }`, no platform_driver, no
+  probe. OEM ships identical 30 KB no-op. Build-graph completeness
+  only.
+
+`noop_modules.md` not yet created (single entry; will start file
+when 2D adds entries).
+
+### EXPORT-projection accuracy retrospective
+
+Pre-2H projection: **0** EXPORTs added. Actual: **0**. Five
+consecutive sub-waves matching projection. The recalibrated
+5–30 EXPORT range for remaining Wave 2 holds; lower bound is
+empirically the most likely outcome. No projection update
+needed yet — single additional data point.
+
+### Commits in this sub-wave (chronological)
+
+- `7094b89` 2H prep section (DT-grounded scope)
+- `b48df6e` 2H prep corrections (DT overlay finding)
+- `9bed310` DEFERRED_FOLLOWUPS: compat-orphan + noop_modules
+- `4a56aa0` 2H prep refinements (EXPORT projection / no-op
+  sub-classes / variant DT)
+- `6d104a5f` 2H wire-up: 4 Kbuild + Makefile pairs (modules)
+- `c94789b` sm8850-common: TARGET_KERNEL_EXT_MODULES += quartet
+- `67ec986b` 2H fix v1: esim Kbuild self-reference
+- `b768c17f` 2H fix v2 (Kbuild form): KBUILD_EXTRA_SYMBOLS for
+  esim + sim_detect (incorrect $(M)/... form)
+- `212c22d7` 2H fix v3 (Makefile form): $(abspath $(CURDIR)/...)
+- `fa76d91` 2H institutional knowledge: recipe doc + tool fix
+
+### Status
+
+**Sub-wave 2H COMPLETE.** Wave 2 source-built ext-modules count:
+30 → 34. Next: sub-wave 2D (oplus_bsp_*, 28 modules) per the
+recalibrated wave plan. Decision on signature-mismatch checker
+deferred until after 2D.
+
+---
+
 ## Sub-wave 2B onwards — heterogeneous module backlog
 
 After the clock cluster lands, Wave 2 moves to the OEM-prebuilt-only
