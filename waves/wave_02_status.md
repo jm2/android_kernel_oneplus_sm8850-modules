@@ -1026,6 +1026,63 @@ across Wave 2). Useful for the post-wave retrospective and for
 informing whether `vendor_dlkm` slimming is a viable downstream
 optimization.
 
+Two sub-classes worth distinguishing in the tracking:
+
+  - **obvious-stub**: source-side review reveals no platform_driver,
+    no probe, init/exit return 0. rf_cable_monitor exemplar.
+    Detectable statically.
+  - **runtime-effective-no-op**: hundreds of lines, real
+    platform_driver registration, real probe — but the activation
+    gate (`#ifdef CONFIG_OPLUS_FEATURE_FOO_FOR_BENGAL_ONLY`,
+    project-ID check, region-string check) never fires on canoe.
+    Source-built module loads cleanly, probe runs, then
+    short-circuits on the gate. Not visible from a static read of
+    the .c file alone — needs either grep for runtime gates or
+    actual flash-time observation.
+
+The second class is the more interesting one to track: it's the
+class where wire-up effort is real but downstream functional
+contribution is zero. By 2D / 2F the agent should expect to see
+this class and call it out by name.
+
+### EXPORT projection (post-correction)
+
+Still **0**. The corrected DT-probe finding doesn't change the
+projection because the consumed kernel API surface is unchanged —
+the modules consume `qmi_helpers`, platform driver registration
+APIs, GPIO consumer APIs (`devm_gpiod_get`, `gpiod_direction_*`,
+`gpiod_set_value`), pinctrl APIs, all already
+`EXPORT_SYMBOL_GPL`'d. The corrected understanding ("modules
+probe and do real hardware work") changes the *behavioral
+significance* of the modules, not their kernel-side EXPORT
+requirements.
+
+### Variant-DT institutional note
+
+`infiniti_overlay_common.dtsi` is `#include`'d by **two**
+project-id-specific overlays, both shipped:
+
+  - `infiniti-24831-canoe-overlay.dtso` (project-id 24831 — primary)
+  - `infiniti-24863-canoe-overlay.dtso` (project-id 24863 — variant)
+
+Both compile to `.dtbo`s and both are wired into the flashed image
+via `select_techpack_dtbos.sh`. Future Wave 2 sub-waves whose
+modules have variant-conditional bindings (touch panel, NFC,
+display, sensor) must check **both** project-id overlay paths,
+not just one. Variant overlay dirs to check:
+
+  - `oplus_nfc/infiniti-24831.dtsi`
+  - `tp/infiniti-oplus-tp-24831.dtsi`
+  - `mm/infiniti-24831-canoe-mm.dtsi`
+  - `oplus_icc/infiniti-24831-icc.dtsi`
+  - `sensor/infiniti-sensor-24831.dtsi`
+  - `oplus_uff/oplus-uff-24831.dtsi`
+  - `oplus_chg/oplus-chg-24831.dtsi`
+  - `oplus_misc/oplus-misc-24831.dtsi`
+
+(24863 variants exist for the subset that diverges; if the 24831
+file doesn't have what you need, `find ... -name '*24863*'`.)
+
 ---
 
 ## Sub-wave 2B onwards — heterogeneous module backlog

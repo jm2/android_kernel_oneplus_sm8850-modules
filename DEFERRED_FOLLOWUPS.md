@@ -456,23 +456,42 @@ nothing on the device.
 empty, which means our wire-up effort scales sublinearly with
 apparent surface area for those modules.
 
+**Two sub-classes to distinguish:**
+
+- **obvious-stub**: init/exit return 0, no platform_driver, no
+  sysfs/proc/file_operations registration. Detectable from a
+  static read of the .c file. rf_cable_monitor exemplar.
+- **runtime-effective-no-op**: real platform_driver registration,
+  real probe(), but activation gate
+  (`#ifdef CONFIG_OPLUS_FEATURE_FOO_FOR_BENGAL_ONLY`, project-id
+  check, region-string check) short-circuits on canoe. Module
+  loads, probe runs, then does nothing. Static source review will
+  call this class "real module"; only runtime observation or
+  careful gate-grep will distinguish it. The more interesting
+  class — wire-up effort is real, downstream contribution is zero.
+
 **Concrete tasks:**
 
-1. Maintain `noop_modules.md` listing source-built modules whose
-   init/exit return 0 and have no platform_driver/file_operations/
-   sysfs registration.
-2. After Wave 2 closes, count and list. If the count is non-trivial
-   (>10), file a downstream-optimization task for `vendor_dlkm`
-   slimming.
-3. The check is detectable statically: parse the .c file for
-   `module_init/exit` macros and trace what those functions
-   actually do; or `nm` the built .ko and look for absence of
-   `__platform_driver_register`, `proc_create`, `device_create_file`,
-   etc.
+1. Maintain `noop_modules.md` with two columns: `obvious-stub` and
+   `runtime-effective-no-op` (if observed). Track count + names.
+2. After Wave 2 closes, file a downstream-optimization task for
+   `vendor_dlkm` slimming if combined count > 10.
+3. obvious-stub detection is statically tractable: parse `.c` for
+   `module_init/exit` macros, follow into the functions, look for
+   absence of `__platform_driver_register`, `proc_create`,
+   `device_create_file`, `sysfs_create_file`, `class_create`,
+   `cdev_init`, etc.
+4. runtime-effective-no-op detection: grep init/probe paths for
+   project-id checks (`get_project()`, `oplus_get_project()`),
+   region-string compares, or `#ifdef CONFIG_OPLUS_FEATURE_*`
+   gates that aren't enabled in canoeauto.conf. By 2D the agent
+   should expect to see this class and call it out by name.
 
 **When to build:** Tracking starts now (manual entries in
 `noop_modules.md`). Tool only if count grows enough to make manual
-inspection expensive.
+inspection expensive. obvious-stub tool is straightforward;
+runtime-effective-no-op tool needs gate-evaluation logic that
+overlaps with the dt_consistency_check compat-orphan extension.
 
 ---
 
