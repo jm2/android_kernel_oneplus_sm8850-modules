@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+MODULE = oplus_network_oem_qmi
+$(MODULE)-objs := oem_qmi_client.o
+EXTRA_CFLAGS += -DQCOM_PLATFORM
+obj-m += $(MODULE).o
