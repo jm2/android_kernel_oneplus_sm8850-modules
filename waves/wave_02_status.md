@@ -949,6 +949,83 @@ upper-bound-uncertain framing is validated.
 
 Prep done 2026-05-02. Wire-up next.
 
+### Corrections (2026-05-03)
+
+Three findings from a closer review of the prep:
+
+**(1) DT probe claim was wrong.** Original prep said "neither compat
+resolves to a node in canoe DT — drivers will register but never
+probe()." That was based on grepping `device/oneplus/canoe-kernel-dts/`
+only. Both compatibles ARE present in
+`kernel_platform/qcom/opensource/devicetree/oplus/infiniti_overlay_common.dtsi`,
+which is `#include`'d by `infiniti-24831-canoe-overlay.dtso` and
+`infiniti-24863-canoe-overlay.dtso`. The compiled `.dtbo`s are wired
+into our flash image via `device/oneplus/sm8850-common/tools/dtb/select_techpack_dtbos.sh`
+(Phase 3 work). Both drivers WILL probe on the flashed device:
+
+  - `oplus,oplus-gpio` node carries esim_en + sim2_det pinctrl, eSIM
+    enable GPIO (`pmih010x_gpios 10`), SIM2 detect GPIO
+    (`pmh0110_d_gpios 7`), uim-reset = "modem_solution" — full
+    eSIM hardware enablement, NOT a no-op.
+  - `oplus, sim_detect` node carries `Hw,sim_det = "modem_det"` —
+    SIM-presence detection wired to modem.
+
+Behavioral effect is NOT nil. These are real-device-functionality
+modules.
+
+**(2) "Space in compatible string" is bug-for-bug matched.** Both
+the source (`{.compatible = "oplus, sim_detect"}`) and the DT node
+(`compatible = "oplus, sim_detect"`) carry the space. Source matches
+DT exactly. Functional, but cargo-culted across both sides for
+reasons known only to OEM. Preserve as-is is correct *because both
+sides have it*; it's not a "preserve OEM typo" call, it's a "the typo
+is the contract" call.
+
+**(3) Process: prep-section greps must span overlays, not just
+canoe-kernel-dts/.** The original grep missed the
+`infiniti_overlay_common.dtsi` path because it lives under the
+qcom/opensource/devicetree tree, not the device/oneplus/canoe-kernel-dts
+tree. Any future sub-wave's DT probe analysis must `git grep` across:
+
+  - `device/oneplus/canoe-kernel-dts/`
+  - `kernel/oneplus/sm8850-modules/kernel_platform/qcom/opensource/devicetree/`
+  - any project-id-specific overlay dirs (e.g. `oplus_nfc/`, `tp/`,
+    `mm/`, `sensor/`, `oplus_uff/`, `oplus_chg/`, `oplus_icc/`,
+    `oplus_misc/`).
+
+Adding to the dt_consistency_check.py followup: the tool currently
+only validates phandle reachability; it could also flag "compatible
+declared in driver but no DT node anywhere" as a separate weak-link
+class. Deferred to DEFERRED_FOLLOWUPS.
+
+### dt_consistency_check.py applicability (revised)
+
+Compatibles resolve via the canoe overlays. From the tool's
+perspective (phandle-consumer-vs-loadable-producer), still nothing
+to flag — neither esim nor sim_detect references phandles to other
+loadable modules' producers. Run will report a normal pass.
+
+### rf_cable_monitor no-op pattern (expanded)
+
+Worth tracking as a Wave 2 metric. The OEM ships a 30 KB module
+in `modules.load` whose only behavior is `op_rf_cable_init()
+{return 0;}` and an empty exit path — no platform_driver, no
+sysfs hooks, no init-time work. The module exists for build-graph
+completeness, not function. Implications:
+
+- "In modules.load" ≠ "functionally required." Some Wave 2 modules
+  may be similarly empty.
+- Source-side investigation that finds a stub doesn't indicate
+  a wire-up bug; it's a real OEM artifact.
+- Inverse pattern (substantial-looking module that's actually a
+  no-op) means our wire-up effort scales sublinearly with apparent
+  surface area for those modules.
+
+Tracking as `noop_modules.md` after 2H closes (count + names
+across Wave 2). Useful for the post-wave retrospective and for
+informing whether `vendor_dlkm` slimming is a viable downstream
+optimization.
+
 ---
 
 ## Sub-wave 2B onwards — heterogeneous module backlog
