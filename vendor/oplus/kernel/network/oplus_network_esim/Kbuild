@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
-MODULE = oplus_network_esim
-$(MODULE)-objs := oplus_network_esim.o
+# Single-source module whose .c filename already matches the module
+# name — use obj-m directly without $(MODULE)-objs to avoid a circular
+# self-reference in kbuild's pattern rules.
 EXTRA_CFLAGS += -DQCOM_PLATFORM
-obj-m += $(MODULE).o
+obj-m += oplus_network_esim.o
