@@ -1205,9 +1205,306 @@ needed yet — single additional data point.
 ### Status
 
 **Sub-wave 2H COMPLETE.** Wave 2 source-built ext-modules count:
-30 → 34. Next: sub-wave 2D (oplus_bsp_*, 28 modules) per the
-recalibrated wave plan. Decision on signature-mismatch checker
+30 → 34. Next: sub-wave 2D (oplus_bsp_* + oplus_hbp_core, 31
+modules — see prep below). Decision on signature-mismatch checker
 deferred until after 2D.
+
+---
+
+## Calibration prediction update (2026-05-03 post-2H)
+
+Five consecutive sub-waves at 0 EXPORTs added (2A, 2A.5, 2C, 2H,
+plus the Phase 4 keyevent_handler proof-point). Recalibrated 5–30
+range was set after four data points; with the fifth, the lower
+bound is empirically the modal outcome, not just possible. Worth
+making the next-step thresholds explicit:
+
+**If 2D lands at 0 EXPORTs**: the range tightens to **0–10 with
+most of the mass at 0**. 2D is the largest remaining sub-wave
+(31 modules) and the most cross-tree-fan-in-heavy of the
+unplayed sub-waves. A zero result there means the favorable
+trend isn't just a clocks/audio artifact (those subsystems had
+F/H pre-export advantages); it's a pattern that holds for
+subsystems that don't share those advantages.
+
+**If 2D lands at 1–5 EXPORTs**: the range stays at 5–30 but
+shifts mass downward; expect the remaining 2E/2F/2G/2I to come
+in similar.
+
+**If 2D lands at >5 EXPORTs**: the original 5–30 range is
+correct and the favorable trend was clocks/audio-specific.
+Reproject 2E/2F/2G/2I on this evidence.
+
+The three remaining sub-waves the previous priors flagged as
+"likely to fire the EXPORT ladder":
+
+- **2D**: cross-tree drm/lcd consumers (touchscreen tp_common
+  uses panel_event_notifier from soc-repo and might consume
+  drm helpers) — partially answered by the 2D prep below
+- **2F**: oplus_other audio extensions (oplus_audio_daemon,
+  oplus_audio_netlink — may need additional EXPORTs from the
+  audio cluster we built in 2C)
+- **2G**: msm_kgsl, msm-eva, msm_video — untouched subsystems
+
+2D is the next real test. If 2D and one of {2F, 2G} both come
+in at zero, the upstream-submission cadence calibration probably
+moves from "patch series in Phase H+1" to "no patch series
+needed; submit any future findings opportunistically."
+
+---
+
+## Sub-wave 2D prep — oplus_bsp_* + oplus_hbp_core (31 modules) (2026-05-03)
+
+The largest unplayed sub-wave by module count. Mixed structure:
+genuine cluster (touch) + independent leaves (haptic, fingerprint,
+fw_update). NOT a Wave-1-style mini-batch and NOT a 2C-style pure
+cluster — hybrid.
+
+### Scope (modules.load filtering)
+
+Started from `vendor_dlkm/lib/modules/modules.load`. Already
+source-built and excluded: `oplus_bsp_dfr_dump_device_info`,
+`oplus_bsp_dfr_dump_reason`, `oplus_bsp_dfr_keyevent_handler`,
+`oplus_bsp_dfr_pmic_monitor`, `oplus_bsp_tp_notify` (4 DFR + 1
+touch-notify, all landed in Wave 1 or earlier 2x sub-waves).
+
+Remaining count: 30 in modules.load + 1 build-time-only dep
+(`oplus_bsp_dft_kernel_fb` — not in modules.load but required for
+haptic_feedback's modpost). Total wire-up: **31 modules**.
+
+### Subsystem breakdown
+
+**Touch cluster (oplus_touchscreen_v2)** — 23 modules. Real DAG:
+
+| Tier | Modules | Internal deps |
+|---|---|---|
+| Foundation | `tp_custom` | none (within touch) |
+| Foundation | `tp_common` | tp_custom + panel_event_notifier (already source-built in soc-repo) |
+| Vendor common | `tp_focal_common`, `tp_goodix_comnon`, `tp_ilitek_common`, `tp_novatek_common`, `tp_syna_common` | each: tp_custom + tp_common |
+| Per-chip Focal leaves | `tp_ft3518`, `tp_ft3658u_spi`, `tp_ft3681`, `tp_ft3683g`, `tp_ft8057p` | tp_focal_common (and tp_custom + tp_common transitively) |
+| Per-chip Goodix leaves | `tp_gt9916`, `tp_gt9966` | tp_goodix_comnon |
+| Per-chip Ilitek leaves | `tp_ilitek7807s` | tp_ilitek_common |
+| Per-chip Novatek leaves | `tp_nt36528_noflash`, `tp_nt36532_noflash`, `tp_nt36536_noflash`, `tp_nt36672c_noflash` | tp_novatek_common |
+| Per-chip Synaptics leaves | `tp_tcm_S3908`, `tp_tcm_S3910`, `tp_td4377_noflash` | tp_syna_common |
+
+This is structurally the cleanest cluster in Wave 2: 1 root
+(tp_custom), 1 second-tier (tp_common), 5 vendor-common
+foundations, 16 per-chip leaves. Build order is fully determined.
+
+**HBP cluster (tp/hbp/hbp)** — 2 modules:
+
+- `oplus_hbp_core` (foundation; consumed by all hbp leaves)
+- `oplus_bsp_tp_hbp_syna_s3910` (deps oplus_hbp_core; the only
+  HBP per-chip leaf in modules.load on canoe — `oplus_ft3683g`
+  and `oplus_bsp_tp_hbp_goodix_gt99x6` exist in the bzl but
+  aren't loaded on canoe)
+
+Two-tier mini-cluster, build ordering: oplus_hbp_core → s3910.
+
+**synaptics_hbp tree** — 1 module:
+
+- `oplus_bsp_synaptics_tcm2` (separate Bazel tree from
+  oplus_touchscreen_v2 and tp/hbp/hbp; independent leaf)
+
+**Haptic cluster (vibrator/bazel)** — 3 modules including the
+hidden dep:
+
+| Module | In modules.load? | ko_deps |
+|---|---|---|
+| `oplus_bsp_dft_kernel_fb` | NO (build-time only) | none |
+| `oplus_bsp_haptic_feedback` | YES | dft_kernel_fb |
+| `oplus_bsp_haptic` | YES | haptic_feedback + boot/projectinfo + boot/bootmode |
+
+dft_kernel_fb is a hidden third haptic-tier module: not loaded at
+boot (OEM doesn't include it in modules.load) but required for
+haptic_feedback's modpost step. We must source-build it AND add
+its Module.symvers via KBUILD_EXTRA_SYMBOLS in haptic_feedback's
+Makefile. It probably ships as a fallback module that's never
+loaded on canoe; our flow will install but not load it.
+
+**Fingerprint** — 1 independent leaf:
+
+- `oplus_bsp_uff_fp_driver` from
+  `vendor/oplus/secure/biometrics/fingerprints/bsp/uff/driver/`
+
+**fw_update** — 1 independent leaf:
+
+- `oplus_bsp_fw_update` from
+  `vendor/oplus/kernel/touchpanel/kernelFwUpdate/bazel/`
+
+### Build-order DAG (critical path)
+
+```
+Already-built foundations (no action):
+  panel_event_notifier (soc-repo), oplusboot, oplus_bsp_bootmode,
+  oplus_bsp_boot_projectinfo, device_info, oplus_bsp_tp_notify
+
+Tier 1 (no internal deps; can build in parallel after foundations):
+  tp_custom        ┐
+  oplus_hbp_core   │
+  synaptics_tcm2   │   parallel
+  fw_update        │
+  uff_fp_driver    │
+  dft_kernel_fb    ┘
+
+Tier 2 (after tier 1):
+  tp_common (deps tp_custom)              ┐
+  haptic_feedback (deps dft_kernel_fb)    │   parallel
+  tp_hbp_syna_s3910 (deps oplus_hbp_core) ┘
+
+Tier 3 (after tp_common):
+  tp_focal_common, tp_goodix_comnon,    ┐
+  tp_ilitek_common, tp_novatek_common,  │   5-way parallel
+  tp_syna_common                        ┘
+  haptic (deps haptic_feedback) — independent of touch tier 3
+
+Tier 4 (after vendor commons):
+  Focal leaves (5), Goodix leaves (2), Ilitek leaves (1),
+  Novatek leaves (4), Synaptics tcm leaves (3)
+  = 15 leaves, all parallel after their respective vendor common
+```
+
+Critical path is 4 tiers deep on the touch side. Wire-up in 4
+batches of Kbuild + Makefile pairs. Brunch run will iterate the
+DAG automatically given correct KBUILD_EXTRA_SYMBOLS chains.
+
+### DT-grounded analysis
+
+Touch panel modules ARE DT-bound. Each per-chip leaf has a
+`compatible` matching its panel-vendor's binding in DT
+(`focal,*`, `goodix,*`, `synaptics,*`, etc.). canoe's DT will
+have ONE panel-vendor compatible enabled (whichever panel the
+device shipped with); the other 14 leaves' probe() functions
+register but never fire.
+
+This is the inverse pattern from 2H esim/sim_detect (where
+modules.load has one entry, DT has one matching node). Here,
+modules.load has 16 per-chip leaves but DT only matches one.
+The other 15 are loaded for build-graph completeness — same
+class as 2H rf_cable_monitor but in bulk. **Expect to add 14–16
+modules to noop_modules.md as runtime-effective-no-op (NOT
+obvious-stub; their probe registers but doesn't fire).**
+
+This is the runtime-effective-no-op class we anticipated in 2H's
+prep refinements. 2D will be the first sub-wave to populate it
+in volume.
+
+DT analysis to run during wire-up: `git grep` for the per-chip
+panel compatibles across both `device/oneplus/canoe-kernel-dts/`
+AND `kernel_platform/qcom/opensource/devicetree/oplus/` (the
+2H-correction lesson). Expect to find ONE panel-compatible
+populated; the other 15 are wired but inert.
+
+### dt_consistency_check.py applicability
+
+Real check this time. tp_common references panel_event_notifier
+(source-built in soc-repo) — phandle reachability passes. Touch
+leaves reference per-vendor commons, all source-built — passes.
+The runtime-effective-no-op leaves reference DT nodes that don't
+exist in canoe; that's a *driver-source-declares-compat-without-
+matching-DT-node* concern, exactly the case the deferred
+`compat-orphan` check would surface. Expect the existing tool to
+report clean (no phandle-vs-loadable issues), and to log "would
+benefit from compat-orphan check" entries pointing at 14–16
+unmatched per-chip compatibles — which is the trigger to actually
+build the deferred tool.
+
+### exports_superset_check.py expectation
+
+All 31 modules have OEM prebuilt counterparts (or, for
+dft_kernel_fb, an OEM .ko exists in infiniti-kernel/ even though
+it's not in modules.load). Expected verdicts:
+
+- Foundations (tp_custom, tp_common, oplus_hbp_core): possibly
+  pass-additive if they export to leaves; otherwise pass-exact.
+- Vendor commons: pass-exact or pass-additive (export to per-chip
+  leaves).
+- Per-chip leaves: pass-exact (leaf consumers, don't export).
+- Independents (synaptics_tcm2, fw_update, uff_fp_driver): pass-
+  exact (unless they export upward to userspace via netlink/
+  ioctl, which doesn't show as EXPORT_SYMBOL).
+- Haptic tier: dft_kernel_fb probably pass-additive (exports
+  feedback API), haptic_feedback pass-exact, haptic pass-exact.
+
+Likelihood of fail-missing-exports: **low**. The touch cluster's
+internal foundation→common→leaf flow is fully under our control
+once we build the foundations correctly. The only OPLUS_ARCH_EXTENDS
+risk would be in tp_common or tp_custom; their .c files should be
+inspected during prep refinement (not done in this prep —
+flagged as wire-up step).
+
+### Anticipated EXPORT_SYMBOL surface
+
+**Projection: 0** (consistent with 5-prior-sub-wave trend).
+
+Reasoning: every consumed kernel API expected to already be
+EXPORT_SYMBOL_GPL'd (input subsystem, sysfs, kthread, regulator,
+gpio, i2c, spi, pinctrl). Touch cluster is mostly userspace-facing
+(input subsystem, sysfs); no reason to expect kernel-side EXPORT
+gaps.
+
+If non-zero, calibration update per the prediction block above.
+
+### Effort projection
+
+Substantially larger than 2H but not proportionally to module count:
+
+- **Wire-up**: 4–6 hours for 31 Kbuild + Makefile pairs. Most are
+  thin; vendor commons need KBUILD_EXTRA_SYMBOLS pointed at
+  tp_custom + tp_common; per-chip leaves need vendor common
+  pointed; haptic_feedback needs dft_kernel_fb pointed.
+- **BoardConfigCommon edit**: 31 lines (large but mechanical).
+- **Build-iteration**: 2–4 brunch runs expected. Bug classes
+  hit in 2H (single-source matching name, KBUILD_EXTRA_SYMBOLS
+  paths) are now documented in WIRE_UP_RECIPE; first run should
+  clear most of them. Expect 1 retry for an unanticipated
+  cross-tree consumer surfacing.
+- **Brunch wall-clock**: ~5 min per iteration when only modules
+  changed (per 2H v4 timing). Worst-case 4 iterations = ~20 min
+  build time + ~30 min debugging per iteration = ~3 hours.
+- **Total**: 1 day expected, 2 days upper-bound.
+
+### Risk areas
+
+1. **Touch cluster's panel_event_notifier consumer**: tp_common
+   uses `panel_event_notifier_register_panel`. Already
+   source-built in soc-repo (kernel-internal). Verify symbol IS
+   exported by the kernel build, not just declared.
+2. **HBP tier interaction with tp_notify**: oplus_hbp_core
+   probably consumes tp_notify exports. Already source-built
+   from Wave 1; symvers wiring needed.
+3. **Haptic dep chain**: dft_kernel_fb's CONFIG_OPLUS_DDK_MTK
+   conditional source. We're qcom, so the non-MTK source path
+   (`common/feedback/kernel_fb.c`) applies. Need to NOT define
+   CONFIG_OPLUS_DDK_MTK.
+4. **uff_fp_driver in vendor/oplus/secure/**: separate Bazel
+   tree, may have unfamiliar conventions. Check
+   `vendor/oplus/secure/biometrics/fingerprints/bsp/uff/driver/oplus_local_modules.bzl`
+   for ko_deps.
+5. **Per-chip leaves' DT compatibles**: 15 of 16 won't match canoe
+   DT (only one panel ships). Confirm this is benign at modprobe
+   time and document in noop_modules.md as runtime-effective-no-op.
+
+### Deliverables checklist (for wire-up phase)
+
+- [ ] Inspect tp_custom.c + tp_common.c for OPLUS_ARCH_EXTENDS
+      gates (2C class risk)
+- [ ] Inspect dft_kernel_fb's `kernel_fb.c` for unexpected deps
+- [ ] Inspect uff_fp_driver bazel for cross-tree consumers
+- [ ] Write 31 Kbuild + Makefile pairs
+- [ ] Add 31 entries to `device/oneplus/sm8850-common/BoardConfigCommon.mk`
+      TARGET_KERNEL_EXT_MODULES
+- [ ] Run `tools/jm2/dt_consistency_check.py` — record vacuously-
+      clean + compat-orphan findings
+- [ ] brunch closeout to green
+- [ ] Run `tools/jm2/exports_superset_check.py` — record verdicts
+- [ ] Populate `noop_modules.md` with the per-chip leaves that
+      probe but never fire
+- [ ] Retrospective + calibration update per the prediction block
+
+### Status
+
+Prep done 2026-05-03. Wire-up next.
 
 ---
 
