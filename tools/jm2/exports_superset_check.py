@@ -69,8 +69,10 @@ def find_oem_counterpart(name: str, oem_dir: Path) -> Path | None:
 
 
 def classify(src_exports: set, oem_exports: set) -> str:
-    if not oem_exports and src_exports == set():
-        return "no-oem-counterpart"
+    # NOTE: "no-oem-counterpart" is decided in main() based on whether
+    # find_oem_counterpart() returned None — NOT here. This function
+    # only decides the verdict assuming both sides exist; both-empty
+    # is a legitimate pass-exact (e.g. no-op stubs, leaf consumers).
     missing = oem_exports - src_exports
     added = src_exports - oem_exports
     if missing:

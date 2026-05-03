@@ -114,6 +114,19 @@ Key points:
   must rename via `$(MODULE)-objs`.
 - **Multi-source modules:** list every `.c` (as `.o`) in `$(MODULE)-objs`.
   Watch for conditional sources (e.g., `<MODULE>-objs += $(if $(CONFIG_X),y.o)`).
+- **Single-source modules where the source filename matches the module
+  name:** drop the `$(MODULE)-objs := ...; obj-X += $(MODULE).o`
+  indirection and use `obj-X += <name>.o` directly. Otherwise kbuild
+  hits a circular self-reference: it tries to build `<name>.o` (the
+  compound-link intermediate kbuild expects from `-objs`) FROM
+  `<name>.o` (the same name, as the .c-derived object). The error is
+  `make[4]: Circular .../<name>.o <- .../<name>.o dependency dropped.`
+  Example: `oplus_network_esim.c` → `oplus_network_esim.ko`, written as:
+
+  ```makefile
+  EXTRA_CFLAGS += -DQCOM_PLATFORM
+  obj-m += oplus_network_esim.o
+  ```
 - **The `obj-$(CONFIG_X) += $(MODULE).o` line** is what triggers the
   build when CONFIG_X is `m` or `y`.
 - **Headers in adjacent dirs:** `#include "../../include/foo.h"` from
@@ -155,6 +168,25 @@ Key points:
 
   Each path is the OTHER module's `Module.symvers`. Order doesn't
   matter; the modpost step concatenates them.
+
+  **CRITICAL: KBUILD_EXTRA_SYMBOLS goes in `Makefile`, NOT `Kbuild`.**
+  In `Kbuild`, `$(M)` is set by the kbuild invocation rooted at
+  `KERNEL_OBJ`, and `$(M)/../sibling/Module.symvers` is resolved
+  *lexically* (string concatenation), not *canonically* (filesystem
+  traversal). The resulting path looks valid but doesn't correspond
+  to a real file; kbuild's symvers loader **silently skips it** and
+  modpost then fails on unresolved symbols. The error you see is
+  "ERROR: modpost: \"foo\" undefined!" — not "cannot find Module.symvers"
+  — which makes the path-resolution issue easy to misdiagnose as a
+  missing-export problem.
+
+  In `Makefile`, `$(CURDIR)` is the module's own dir and
+  `$(abspath ...)` canonicalizes the `..` traversals before kbuild
+  ever sees the value. Use `$(abspath $(CURDIR)/...)` always; never
+  rely on `$(M)/...` from Kbuild.
+
+  See `dump_device_info/Makefile` and `oplus_projectinfo/qcom/Makefile`
+  for canonical examples.
 - **Don't replace the existing `Makefile`** without understanding
   what it had. OnePlus modules sometimes ship a Makefile that's
   actually an in-tree-style `obj-$(CONFIG_X) += <obj>.o` list — if
