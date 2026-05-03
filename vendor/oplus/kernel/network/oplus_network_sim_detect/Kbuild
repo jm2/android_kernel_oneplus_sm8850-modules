@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Cross-leaf symbol dependency: this module consumes oem_qmi_common_req,
+# EXPORT_SYMBOL'd by oplus_network_oem_qmi. Kbuild does NOT auto-merge
+# sibling-module Module.symvers — point at the producer's symvers
+# explicitly so modpost can resolve. (Bazel handles this via ko_deps.)
 MODULE = oplus_network_sim_detect
 $(MODULE)-objs := sim_detect.o
 EXTRA_CFLAGS += -DQCOM_PLATFORM
+KBUILD_EXTRA_SYMBOLS += $(M)/../oplus_network_oem_qmi/Module.symvers
 obj-m += $(MODULE).o
