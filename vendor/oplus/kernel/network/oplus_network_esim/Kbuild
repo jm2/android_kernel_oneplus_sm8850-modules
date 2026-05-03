@@ -3,11 +3,9 @@
 # name — use obj-m directly without $(MODULE)-objs to avoid a circular
 # self-reference in kbuild's pattern rules.
 #
-# Cross-leaf symbol dependency: this module consumes uim_qmi_power_up_req
-# and uim_qmi_power_down_req, both EXPORT_SYMBOL'd by oplus_network_oem_qmi.
-# Kbuild's external-module flow does NOT auto-merge sibling-module
-# Module.symvers — we must point at the producer's symvers explicitly so
-# modpost can resolve the references. (Bazel handles this via ko_deps.)
+# Cross-leaf symbol dependency on oplus_network_oem_qmi (consumes
+# uim_qmi_power_up_req, uim_qmi_power_down_req) is wired via
+# KBUILD_EXTRA_SYMBOLS in the sibling Makefile (proper $(abspath …)
+# path resolution).
 EXTRA_CFLAGS += -DQCOM_PLATFORM
-KBUILD_EXTRA_SYMBOLS += $(M)/../oplus_network_oem_qmi/Module.symvers
 obj-m += oplus_network_esim.o
