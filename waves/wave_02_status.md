@@ -858,6 +858,99 @@ sub-wave; actual is **0 to date**.
 
 ---
 
+## Sub-wave 2H prep — oplus_network (4 modules) (2026-05-02)
+
+First post-recalibration sub-wave. Smallest cross-tree exerciser.
+Calibration value: tests whether the "0 EXPORTs" trend holds when the
+modules consume kernel-built-in APIs across-tree (qmi_helpers).
+
+### Scope (modules.load → source dirs → Bazel structure)
+
+| # | Module | Source path | -objs | ko_deps |
+|---|--------|-------------|-------|---------|
+| 1 | `oplus_network_rf_cable_monitor` | `vendor/oplus/kernel/network/oplus_rf_cable_monitor/` | `oplus_rf_cable_monitor.o` | none |
+| 2 | `oplus_network_oem_qmi` | `vendor/oplus/kernel/network/oplus_network_oem_qmi/` | `oem_qmi_client.o` | qmi_helpers (kernel built-in) |
+| 3 | `oplus_network_esim` | `vendor/oplus/kernel/network/oplus_network_esim/` | `oplus_network_esim.o` | oplus_network_oem_qmi |
+| 4 | `oplus_network_sim_detect` | `vendor/oplus/kernel/network/oplus_network_sim_detect/` | `sim_detect.o` | oplus_network_oem_qmi |
+
+Build order: `qmi_helpers` (already source-built, kernel-internal,
+landing in vendor_dlkm via `modules.load`) → `oplus_network_oem_qmi`
+→ {`oplus_network_esim`, `oplus_network_sim_detect`} parallel; rf_cable
+independent. None of the 4 has a Kbuild yet — pure Bazel projects.
+
+### DT-grounded analysis
+
+- 2 of 4 modules register DT-bound platform drivers:
+  - `oplus_network_esim`: compat `oplus,oplus-gpio` (note: misnamed
+    upstream — the actual driver is the esim platform driver).
+  - `oplus_network_sim_detect`: compat `oplus, sim_detect` (note:
+    space — likely OEM source typo, preserved as-is).
+- Neither compat appears in `device/oneplus/canoe-kernel-dts/` —
+  no DT node binds these drivers in canoe. Drivers will register
+  but never `probe()`. Source-built modules are still required to
+  satisfy `modules.load` entries; behavioral effect is nil.
+- `oplus_network_rf_cable_monitor.c` is a **no-op stub**:
+  `op_rf_cable_init()` returns 0, `op_rf_cable_exit()` empty, no
+  platform_driver, no probe. OEM prebuilt confirms — `nm` shows
+  only init_module + cleanup_module at offset 0x4 (return-0
+  sleds), zero EXPORT_SYMBOLs. We're shipping a 30 KB no-op for
+  build-graph completeness.
+- `oem_qmi_client.c` is the only module with real kernel-API
+  surface: consumes `qmi_handle_init/release`, `qmi_txn_*`,
+  `qmi_send_request/response/indication`, `qmi_add_lookup`,
+  `qmi_encode/decode_message`, `qmi_response_type_v01_ei`. All
+  already `EXPORT_SYMBOL_GPL`'d in
+  `kernel/.../drivers/soc/qcom/qmi_interface.c` + `qmi_encdec.c`.
+  No kernel-side EXPORT additions expected.
+
+### dt_consistency_check.py applicability
+
+Vacuously clean. 2 of 4 modules have compatibles, neither resolves
+to a node in canoe DT — but that's a behavioral concern (drivers
+won't probe), not a phandle-consumer-references-non-loadable-producer
+concern that the tool catches. Tool finds nothing to report;
+recording the "vacuously clean" outcome here.
+
+### exports_superset_check.py expectation
+
+All 4 modules have OEM prebuilt counterparts in
+`device/oneplus/infiniti-kernel/`. Expected verdicts:
+- `oplus_network_rf_cable_monitor`: pass-exact (both empty).
+- `oplus_network_oem_qmi`: pass-exact or pass-additive (oem_qmi
+  is a leaf consumer, doesn't export to other oplus modules).
+- `oplus_network_esim` / `oplus_network_sim_detect`: pass-exact
+  or pass-additive (also leaf consumers).
+
+If any return `fail-missing-exports`, we have an OPLUS_ARCH_EXTENDS-
+class issue analogous to 2C. Likelihood: low (oem_qmi/esim/sim_detect
+are oplus-internal, no upstream Bazel-flow defines to mirror).
+
+### Anticipated EXPORT_SYMBOL surface
+
+**Projection: 0** (consistent with the 4-prior-sub-wave trend).
+
+Reasoning: every kernel API consumed is already
+`EXPORT_SYMBOL_GPL`'d. No producer-to-other-module exports needed
+(rf_cable is no-op; oem_qmi/esim/sim_detect are leaf consumers,
+not producers). If non-zero, `kernel_export_additions.md` gets
+created and the priors recalibration's lower-bound-solid /
+upper-bound-uncertain framing is validated.
+
+### Effort projection
+
+- Wire-up: 30–60 min (4 thin Kbuilds + Makefile shells, top-level
+  `vendor/oplus/kernel/network/Kbuild` ordering, BoardConfigCommon.mk
+  TARGET_KERNEL_EXT_MODULES additions).
+- Build-iteration: 1 brunch run if clean, 1 retry if any
+  miscellaneous issue (header path, kbuild syntax).
+- Total: 1–2 hours expected, 4 hours upper-bound.
+
+### Status
+
+Prep done 2026-05-02. Wire-up next.
+
+---
+
 ## Sub-wave 2B onwards — heterogeneous module backlog
 
 After the clock cluster lands, Wave 2 moves to the OEM-prebuilt-only
