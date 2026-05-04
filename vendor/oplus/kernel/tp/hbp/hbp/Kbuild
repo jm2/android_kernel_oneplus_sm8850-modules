@@ -30,3 +30,7 @@ oplus_bsp_tp_hbp_syna_s3910-y := \
     chips/synaptics/s3910/tcm/synaptics_touchcom_func_touch.o \
     chips/synaptics/s3910/tcm/synaptics_touchcom_func_reflash.o \
     chips/synaptics/s3910/tcm/synaptics_touchcom_func_romboot.o
+
+# oplus_ft3683g (HBP variant Focal driver; deps oplus_hbp_core)
+obj-m += oplus_ft3683g.o
+oplus_ft3683g-y := chips/focal/ft3683g/fhp_core.o
