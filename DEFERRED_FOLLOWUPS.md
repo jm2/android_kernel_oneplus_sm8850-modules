@@ -495,6 +495,47 @@ overlaps with the dt_consistency_check compat-orphan extension.
 
 ---
 
+## vendor_dlkm slimming via runtime-effective-no-op removal
+
+**Surfaced:** 2026-05-03 (sub-wave 2D closeout — first bulk
+population of noop_modules.md).
+
+**Context:** Wave 2 has crossed 17 noop entries already (1
+obvious-stub + 16 runtime-effective-no-op). The 16 runtime-
+effective-no-op entries are all per-chip touch leaves whose
+`compatible` strings don't match canoe DT — driver registers
+platform_driver, never probes. Per-leaf .ko sizes range
+200-600 KB; 16 entries × ~200 KB average = ~3 MB of vendor_dlkm
+that ships but does nothing on canoe.
+
+OEM keeps these in modules.load because the same source tree
+ships across many OnePlus devices — different panels per
+device — and the modules.load is shared. We don't have that
+constraint; we only flash to canoe.
+
+**Concrete tasks:**
+
+1. After Wave 2 closes, audit final noop_modules.md count.
+2. For each runtime-effective-no-op entry, decide: remove from
+   modules.load (and from TARGET_KERNEL_EXT_MODULES if no
+   in-tree consumer needs the symvers)? Keep "ships but doesn't
+   load" (still in updates/ but not in modules.load)?
+3. If removing entirely: filter the per-chip leaves whose
+   compatibles don't match canoe DT out of TARGET_KERNEL_EXT_MODULES,
+   leaving only the ones that bind on canoe (oplus_hbp_core,
+   oplus_bsp_tp_hbp_syna_s3910, plus their build-time deps).
+4. Re-run brunch closeout and verify vendor_dlkm size delta.
+
+**When to act:** After Wave 2 closes (post-2F/2E/2G/2I). Don't
+attempt during active sub-wave wire-up — the goal of Wave 2 is
+parity with OEM's loaded set first; optimization is downstream.
+
+**Rough savings projection:** ~3 MB of vendor_dlkm. Not large
+in absolute terms but a clean, low-risk win once the pattern is
+documented.
+
+---
+
 ## Format
 
 To add new entries:

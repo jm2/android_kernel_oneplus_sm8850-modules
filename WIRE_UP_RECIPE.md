@@ -330,6 +330,57 @@ If the verdict isn't `pass`, the failure-mode taxonomy:
 
 ---
 
+## Step 7.5 — When exports_superset_check flags fail-missing-exports
+
+Run `tools/jm2/exports_superset_check.py` against the build artifacts
+in `updates/` after every brunch closeout. The verdict
+`fail-missing-exports` flags modules whose source-built version
+exports fewer symbols than the OEM prebuilt counterpart. The tool's
+strict-superset rule is correct: in general, an OEM-prebuilt consumer
+that depends on a missing symbol will fail to load against a
+source-built producer that doesn't export it.
+
+But the tool can't tell whether an OEM-prebuilt consumer for the
+missing symbols is actually in our final image. That requires
+per-consumer inspection, NOT just `depmod` — `modules.dep` checks
+symbol-name resolution but doesn't catch call sites that reach a
+missing symbol indirectly through a function pointer or wrapper.
+
+When the tool flags `fail-missing-exports`, the diagnostic gate is:
+
+```bash
+# For each missing symbol, find OEM prebuilts that consume it
+for sym in <missing-symbols>; do
+    echo "Symbol: $sym"
+    for ko in device/oneplus/infiniti-kernel/*.ko; do
+        if nm "$ko" 2>/dev/null | grep -qE "^\s+U\s+${sym}$"; then
+            echo "  $(basename $ko) consumes $sym"
+        fi
+    done
+done
+```
+
+Then for each consumer found:
+
+- If the consumer is also source-built (in `TARGET_KERNEL_EXT_MODULES`),
+  our build replaces it; check whether our version still uses the
+  missing symbol or has migrated to a different API.
+- If the consumer is OEM-prebuilt-only and consumes the missing
+  symbol, this is a **real runtime bug** — the module will fail to
+  load. Either (a) add the missing EXPORT_SYMBOL in our source tree,
+  or (b) source-build the consumer too with the new API.
+- If no consumer references the missing symbol, the verdict is a
+  *true positive on the static rule* but a *false positive on
+  runtime impact*. Document explicitly in the sub-wave retro and
+  move on.
+
+**Don't accept a `depmod` pass alone as proof of safety.** depmod
+catches `__versions` mismatches; the `nm U` check catches actual
+call sites. Both are needed. (Surfaced 2026-05-03 in 2D's
+oplus_hbp_core API-version-delta finding; see wave_02_status.md.)
+
+---
+
 ## Step 8 — Confirm the OEM-kernel-prebuilt fallback still works
 
 Each commit must keep the `BOARD_VENDOR_KERNEL_MODULES` (OEM-prebuilt

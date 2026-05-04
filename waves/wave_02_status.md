@@ -1536,24 +1536,47 @@ since the Phase 4 keyevent_handler proof-point. 2A took 3,
 - `oplus_hbp_core`: missing `hbp_dev_ctrl_hw_reset`,
   `hbp_dev_ctrl_power_reconfig`; added `hbp_dev_power_type_ctrl`.
 
-**Confirmed false alarm**: this is an API version delta. OEM
-oplus_hbp_core has v1 API names; our source tree has v2.
-We source-build BOTH the producer (oplus_hbp_core) AND the only
-in-tree consumer that uses these symbols (oplus_bsp_tp_hbp_syna_s3910)
-with v2 API. The other in-image consumer that calls the hbp_core
-API — OEM-prebuilt `oplus_ft3683g` — uses only the
-common-across-versions symbols (`hbp_exception_report`,
-`hbp_register_devices`), both of which our source-built
-oplus_hbp_core exports.
+This is an API version delta: OEM oplus_hbp_core exports v1
+names; our source tree exports v2. **The tool flagged correctly
+— this is a real condition.** The question the tool can't answer
+is whether anything in the as-shipped image actually consumes
+the missing v1 symbols. Resolving that requires per-consumer
+inspection.
 
-No runtime symbol-resolution failure expected. depmod pass
-verified via `modules.dep` in vendor_dlkm: oplus_ft3683g and
-oplus_bsp_tp_hbp_syna_s3910 both resolve.
+Verification chain (run during diagnosis, recording explicitly
+here so the methodology is reproducible):
 
-This finding adds a real-world example to the
-exports_superset_check tool's limitations doc: the strict-superset
-rule is conservative when both producer and consumer are
-source-built with a different API version than OEM.
+1. **`nm` undefined-refs check on every OEM prebuilt .ko in
+   `device/oneplus/infiniti-kernel/`**:
+   `nm <ko> | grep -E '^\s+U\s+hbp_dev_ctrl_(hw_reset|power_reconfig)$'`
+   - `hbp_dev_ctrl_hw_reset`: only `oplus_bsp_tp_hbp_syna_s3910.ko`
+   - `hbp_dev_ctrl_power_reconfig`: ZERO consumers anywhere
+2. **The only OEM prebuilt that consumes a v1 symbol —
+   `oplus_bsp_tp_hbp_syna_s3910.ko` — we source-build ourselves**.
+   Our v2 build replaces the OEM v1 prebuilt in the final image.
+3. **The other in-image consumer of hbp_core API —
+   `oplus_ft3683g.ko` (OEM prebuilt; not source-built)** — has
+   only two undefined hbp_* refs: `hbp_exception_report` and
+   `hbp_register_devices`. Both are common-across-versions and
+   exported by our source-built oplus_hbp_core. `nm` confirms
+   no undefined refs to v1 symbols.
+4. `modules.dep` in the final vendor_dlkm resolves both consumers
+   (necessary but not sufficient on its own; the nm check above
+   is the load-bearing evidence).
+
+**No runtime symbol-resolution failure**. The `fail-missing-exports`
+verdict was a *true positive on the static rule* (we're missing
+symbols OEM exports) and a *false positive on runtime impact*
+(no consumer in our final image references the missing symbols).
+
+Methodology note for future sub-waves: when exports_superset_check
+flags fail-missing-exports, the diagnostic gate is `nm | grep U`
+across the OEM prebuilt set, NOT just `depmod`. Symbol-name
+resolution in modules.dep is necessary but not sufficient — it
+catches `__versions` mismatches but doesn't confirm that no
+prebuilt has a call site that would invoke the missing symbol.
+The `nm U` check is the bulletproof confirmation. Adding to
+WIRE_UP_RECIPE.md.
 
 ### EXPORT_SYMBOL count: 0
 
@@ -1591,15 +1614,17 @@ that entry can be retired if the trend extends one more sub-wave.
 
 ### no-op modules tracked
 
-15 runtime-effective-no-op entries added to `noop_modules.md`
+16 runtime-effective-no-op entries added to `noop_modules.md`
 (first bulk population). All 15 are per-chip touch leaves whose
 compatible doesn't match canoe DT (or matches a `status = "disabled"`
 node). Active touch driver on canoe is Synaptics S3910 via HBP
 (`oplus_bsp_tp_hbp_syna_s3910`).
 
-If Wave 2 closes with 15+ runtime-effective-no-op entries, file
-downstream-optimization task: removing per-chip touch leaves whose
-compatibles don't match canoe DT would save ~3 MB of vendor_dlkm.
+Wave 2 has crossed the 15-entry threshold (16 entries from 2D
+alone). Filed `vendor_dlkm slimming via runtime-effective-no-op
+removal` in DEFERRED_FOLLOWUPS — removing per-chip touch leaves
+whose compatibles don't match canoe DT would save ~3 MB of
+vendor_dlkm space.
 
 ### Effort actuals
 
