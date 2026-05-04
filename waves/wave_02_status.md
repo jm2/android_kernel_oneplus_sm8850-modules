@@ -1885,6 +1885,113 @@ calibration update is data-driven not narrative-driven.
 
 ---
 
+## Sub-wave 2F.1 retrospective (2026-05-04)
+
+### Outcome
+
+**GREEN. 5/5 pass-exact. EXPORT count = 0.**
+
+| Module | src .ko | OEM .ko | exports verdict |
+|---|---|---|---|
+| oplus_audio_aw882xx | 407032 | 381680 | pass-exact (0/0) |
+| oplus_audio_daemon | 39352 | 40736 | pass-exact (8/8) |
+| oplus_audio_extend | 30440 | 29848 | pass-exact (2/2) |
+| oplus_audio_netlink | 27960 | 28640 | pass-exact (1/1) |
+| oplus_audio_tfa98xx_v6 | 491200 | 420064 | pass-exact (0/0) |
+
+Brunch v3: 4:54.
+
+### Calibration update — per pre-decision threshold
+
+**2F.1 actual = 0**. Per the threshold pre-decision (recorded
+before build): **range tightens to 0–5 with near-certain mass
+at 0; trend conclusively NOT artifact of any specific subsystem
+class. Audio is NOT sui generis.** The 663 OPLUS_ARCH_EXTENDS
+gates didn't surface latent EXPORT requirements because the
+qcom build path compiles out the OPLUS_FEATURE_SPEAKER_MUTE /
+AUDIO_FTM / FADE_IN / TFA98XX_VI_FEEDBACK code blocks anyway
+(those defines aren't in canoeautoconf.h on purpose — OEM
+ships the qcom audio modules with those features compiled out).
+
+**Seven consecutive sub-waves at 0 EXPORTs** (Phase 4 keyevent_handler
+proof-point + 2A + 2A.5 + 2C + 2H + 2D + 2F.1).
+
+The "EXPORT_SYMBOL upstream submission cadence" entry in
+DEFERRED_FOLLOWUPS can now be retired: there's no Wave 2 EXPORT
+ladder to upstream. (Filed as separate cleanup task — defer
+the actual retirement until Wave 2 closes, in case 2F.2/2F.3
+or remaining sub-waves surprise us.)
+
+### Brunch iteration history
+
+Three iterations to green. The bug class progression was unusual:
+
+- **v1 (5:26, exit 0, 0 .ko built — silent skip)**: My initial
+  Kbuild edit added `obj-y +=` for the 5 oplus subdirs but the
+  build silently produced zero modules. modules.order didn't
+  include them; no .o compiled.
+- **v2 (5:16, exit 0, 0 .ko built — same silent skip)**: Collapsed
+  the obj-y line to single-statement form (belt-and-braces fix in
+  case kbuild parsing was confused by the obj-y := / += split).
+  Same silent skip.
+- **v3 (4:54, GREEN)**: Root cause found — the per-leaf Kbuilds'
+  `obj-$(CONFIG_X)` lines need Make-side CONFIG variables, not
+  C-side #defines. canoeautoconf.h had `#define CONFIG_AUDIO_EXTEND_DRV 1`
+  (correct for source ifdef gates) but canoeauto.conf was MISSING
+  the corresponding `export CONFIG_AUDIO_EXTEND_DRV=m` line.
+  Without the Make variable, `obj-$(CONFIG_AUDIO_EXTEND_DRV)`
+  evaluated to `obj- += foo.o` which silently dropped the entry.
+  Added 5 export lines to canoeauto.conf → all 5 modules built.
+
+### Lesson — Make-side / C-side asymmetry
+
+The audio-kernel canoe config is split into two files that BOTH
+must list every CONFIG flag:
+
+- `canoeauto.conf` — Make-side, `export CONFIG_X=m`
+- `canoeautoconf.h` — C-side, `#define CONFIG_X 1`
+
+Setting one without the other is a silent failure mode. Setting
+only the .h: build "succeeds" with zero .ko output. Setting only
+the .conf: .ko builds but source #ifdef blocks compile out, .ko
+is functionally empty.
+
+Added Step 7.6 to WIRE_UP_RECIPE.md documenting this and the
+diagnostic recipe (check modules.order; if missing, grep BOTH
+files for the CONFIG flag).
+
+### Install path layout
+
+The 5 .ko files installed to subdirectory paths under updates/:
+`updates/oplus/qcom/oplus_audio_extend.ko`,
+`updates/oplus/codecs/aw882xx/oplus_audio_aw882xx.ko`, etc. NOT
+flat `updates/oplus_audio_extend.ko`. The depmod step then
+flat-installs to `vendor_dlkm/lib/modules/`. Verification scripts
+should check the FINAL flat location, not the
+subdir-preserved updates/ tree. Misled myself for two iterations
+by checking `updates/oplus_audio_*.ko` and finding nothing.
+
+### Effort actuals
+
+- Wire-up: 1 hour (canoeautoconf.h additions, per-leaf Kbuild
+  CONFIG_ARCH_CANOE cases via awk + 2 manual edits, audio-kernel
+  Kbuild obj-y addition)
+- Build-iteration: 3 brunch runs (16 min total wall clock)
+- Diagnosis time: ~30 min on the silent-skip bug
+- Total: ~2 hours (estimate was 1–4 hours; landed in the middle)
+
+### Status
+
+**Sub-wave 2F.1 COMPLETE.** Wave 2 source-built ext-modules: 35 ->
+35 entries (audio-kernel was already 1 entry; we extended it).
+Total .ko outputs: 64 -> 69.
+
+Next: 2F.2 (Tier-3 batch — sensors, magcvr, mm_kevent, secure,
+sync_fence — 13 modules across 6 ext-module entries) per the
+2F sub-iteration plan.
+
+---
+
 ## Sub-wave 2B onwards — heterogeneous module backlog
 
 After the clock cluster lands, Wave 2 moves to the OEM-prebuilt-only

@@ -381,6 +381,65 @@ oplus_hbp_core API-version-delta finding; see wave_02_status.md.)
 
 ---
 
+## Step 7.6 — When obj-y subdir recursion silently produces no .ko
+
+If you add a subdir to a parent Kbuild's `obj-y :=` and brunch
+exits 0 but the expected .ko files aren't in the build output,
+the silent skip is almost always a Make-side / C-side CONFIG-flag
+asymmetry.
+
+The audio-kernel-style canoe config is split across two files:
+
+- `<root>/config/canoeauto.conf` — read by GNU make via
+  `include $(AUDIO_ROOT)/config/canoeauto.conf`. Contains
+  `export CONFIG_X=m` lines that set Make variables consumed by
+  `obj-$(CONFIG_X) += foo.o` in per-leaf Kbuilds.
+- `<root>/config/canoeautoconf.h` — included by the C compiler
+  via `INCS += -include $(AUDIO_ROOT)/config/canoeautoconf.h`.
+  Contains `#define CONFIG_X 1` lines that gate `#ifdef CONFIG_X`
+  blocks in the source code.
+
+Setting `#define CONFIG_X 1` in the .h alone is a no-op for
+`obj-$(CONFIG_X)` — the Make variable is unset, so the obj line
+expands to `obj- += foo.o` which doesn't queue anything to build.
+The build succeeds because no error fires; the module just
+doesn't get built.
+
+The reverse failure also exists: setting `export CONFIG_X=m` in
+.conf without `#define CONFIG_X 1` in .h produces a .ko whose
+source `#ifdef CONFIG_X` blocks compile out, so the .ko is
+syntactically built but functionally empty.
+
+**Both files must list every CONFIG flag. Always set both.**
+
+Diagnostic when a module silently fails to build:
+
+```bash
+# 1. Confirm the obj-y subdir was traversed
+grep "Entering directory.*<subdir>" <brunch.log>
+
+# 2. Confirm the module.order entry was created
+grep <module-name> <root>/modules.order
+
+# 3. If no entry: the obj-$(CONFIG_X) didn't fire.
+#    Check both:
+grep "CONFIG_X" <root>/config/canoeauto.conf      # Make-side
+grep "CONFIG_X" <root>/config/canoeautoconf.h     # C-side
+```
+
+If the install path is non-standard (e.g.
+`updates/oplus/codecs/aw882xx/foo.ko` rather than `updates/foo.ko`),
+that's NOT a failure — it's just the obj-y subdir-recursive INSTALL
+preserving the source-tree layout. The depmod step then flat-installs
+to `vendor_dlkm/lib/modules/foo.ko`. Look at the final installed
+location, not the build-tree intermediate.
+
+(Surfaced 2026-05-04 in 2F.1 wire-up; v1+v2 silently produced 0
+audio modules until canoeauto.conf was updated alongside
+canoeautoconf.h.)
+
+---
+
 ## Step 8 — Confirm the OEM-kernel-prebuilt fallback still works
 
 Each commit must keep the `BOARD_VENDOR_KERNEL_MODULES` (OEM-prebuilt
