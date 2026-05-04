@@ -1,1 +1,10 @@
 obj-y := dsp/ ipc/ soc/ asoc/ asoc/codecs/ asoc/codecs/lpass-cdc/ asoc/codecs/bolero/ asoc/codecs/wcd939x/ asoc/codecs/wsa884x/ asoc/codecs/wcd938x/ asoc/codecs/wsa883x/ asoc/codecs/wcd937x/ asoc/codecs/qmp1000/ asoc/codecs/sdca/ asoc/codecs/wcd9378/
+# Sub-wave 2F.1 audio extensions: 5 oplus_audio_* modules under
+# canoe.bzl's #ifdef OPLUS_ARCH_EXTENDS section. Each subdir has its
+# own Kbuild + Makefile and self-gates via obj-$(CONFIG_*) on the
+# CONFIG_* defines added to canoeautoconf.h. Listed individually
+# (rather than `obj-y += oplus/`) for minimal blast radius — the
+# parent oplus/Kbuild's qcom branch would also pull in sipa,
+# aw87xxx, oplus_speaker_manager, usbc_switch,
+# oplus_typec_switch_i2c which are not in canoe's modules.load.
+obj-y += oplus/qcom/ oplus/codecs/aw882xx/ oplus/codecs/tfa98xx-v6/ oplus/oplus_audio_daemon/ oplus/oplus_audio_netlink/

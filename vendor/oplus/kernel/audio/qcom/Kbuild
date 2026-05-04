@@ -45,6 +45,10 @@ ifeq ($(KERNEL_BUILD), 0)
 		-include $(AUDIO_ROOT)/oplus/config/oplusbengalauto.conf
 		INCS    +=  -include $(AUDIO_ROOT)/oplus/config/oplusbengalautoconf.h
 	endif
+	ifeq ($(CONFIG_ARCH_CANOE), y)
+		include $(AUDIO_ROOT)/config/canoeauto.conf
+		INCS    +=  -include $(AUDIO_ROOT)/config/canoeautoconf.h
+	endif
 endif
 
 # As per target team, build is done as follows:

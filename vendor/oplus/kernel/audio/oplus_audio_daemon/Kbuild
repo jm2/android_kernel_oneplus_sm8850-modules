@@ -14,6 +14,13 @@ ifeq ($(KERNEL_BUILD), 1)
 	AUDIO_ROOT := $(AUDIO_BLD_DIR)/techpack/audio
 endif
 
+ifeq ($(KERNEL_BUILD), 0)
+	ifeq ($(CONFIG_ARCH_CANOE), y)
+		include $(AUDIO_ROOT)/config/canoeauto.conf
+		INCS    +=  -include $(AUDIO_ROOT)/config/canoeautoconf.h
+	endif
+endif
+
 # As per target team, build is done as follows:
 # Defconfig : build with default flags
 # Slub      : defconfig  + CONFIG_SLUB_DEBUG := y +

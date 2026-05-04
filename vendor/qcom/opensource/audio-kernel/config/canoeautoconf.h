@@ -55,3 +55,13 @@
    DEFERRED_FOLLOWUPS.md. */
 #define CONFIG_MSM_EXT_DISPLAY 1
 #define CONFIG_SND_SOC_SWR_DMIC 1
+
+/* Sub-wave 2F.1 audio extensions: 5 oplus_audio_* modules registered
+ * by canoe.bzl under #ifdef OPLUS_ARCH_EXTENDS. CONFIG flags here
+ * gate the per-leaf Kbuilds' obj-$(CONFIG_*) lines and the ifdef
+ * blocks in source. Surfaced 2026-05-04 by 2F prep. */
+#define CONFIG_AUDIO_EXTEND_DRV 1
+#define CONFIG_SND_SOC_AW882XX 1
+#define CONFIG_SND_SOC_TFA98XX 1
+#define CONFIG_AUDIO_DAEMON_KERNEL_QCOM 1
+#define CONFIG_AUDIO_NETLINK_KERNEL 1
