@@ -1,3 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-ccflags-y += -DCONFIG_OPLUS_SYNC_FENCE
+# sync_trace.h has TRACE_INCLUDE_PATH = ./ which resolves relative to
+# the build dir; need -I$(src) so the compiler finds it in our source.
+ccflags-y += -I$(src) -DCONFIG_OPLUS_SYNC_FENCE
 obj-m += oplus_sync_fence.o
