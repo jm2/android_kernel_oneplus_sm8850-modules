@@ -1508,6 +1508,139 @@ Prep done 2026-05-03. Wire-up next.
 
 ---
 
+## Sub-wave 2D retrospective (2026-05-03)
+
+### Outcome
+
+**GREEN ON FIRST BRUNCH ITERATION.** All 30 .ko outputs across 7
+ext-module entries built clean. Brunch v1 exit 0 in 5:26.
+
+This is the first brunch run that landed clean on iteration 1
+since the Phase 4 keyevent_handler proof-point. 2A took 3,
+2A.5 took 1 (after dt_consistency fix), 2C took 3 (final v3),
+2H took 4 (v4 green). 2D's clean-on-first reflects:
+
+1. The 2H institutional knowledge applied: KBUILD_EXTRA_SYMBOLS
+   in Makefile (not Kbuild), single-source-matching-name
+   pitfall avoided.
+2. The dispatcher pattern (touch cluster, hbp, vibrator)
+   correctly mapped Bazel multi-module srcs to a single M= dir
+   with auto-merged internal symvers.
+3. ZERO OPLUS_ARCH_EXTENDS in any 2D source tree (vs 2C's audio
+   cluster which had hundreds).
+
+### exports_superset_check verdicts (2D modules)
+
+29/30 pass-exact. 1/30 fail-missing-exports:
+
+- `oplus_hbp_core`: missing `hbp_dev_ctrl_hw_reset`,
+  `hbp_dev_ctrl_power_reconfig`; added `hbp_dev_power_type_ctrl`.
+
+**Confirmed false alarm**: this is an API version delta. OEM
+oplus_hbp_core has v1 API names; our source tree has v2.
+We source-build BOTH the producer (oplus_hbp_core) AND the only
+in-tree consumer that uses these symbols (oplus_bsp_tp_hbp_syna_s3910)
+with v2 API. The other in-image consumer that calls the hbp_core
+API — OEM-prebuilt `oplus_ft3683g` — uses only the
+common-across-versions symbols (`hbp_exception_report`,
+`hbp_register_devices`), both of which our source-built
+oplus_hbp_core exports.
+
+No runtime symbol-resolution failure expected. depmod pass
+verified via `modules.dep` in vendor_dlkm: oplus_ft3683g and
+oplus_bsp_tp_hbp_syna_s3910 both resolve.
+
+This finding adds a real-world example to the
+exports_superset_check tool's limitations doc: the strict-superset
+rule is conservative when both producer and consumer are
+source-built with a different API version than OEM.
+
+### EXPORT_SYMBOL count: 0
+
+**Projection: 0. Actual: 0.** Six consecutive sub-waves matching
+projection.
+
+No new EXPORT_SYMBOL declarations needed in any kernel-source-tree
+file. All consumed APIs (input subsystem, sysfs, regulator, gpio,
+i2c, spi, pinctrl, plus the existing oplus modules' exports)
+were already EXPORT_SYMBOL_GPL'd. Touch cluster's internal
+producer→consumer chain is fully under our control via the
+dispatcher pattern.
+
+### Calibration update (per the prediction block)
+
+The prediction was: "If 2D lands at 0 EXPORTs, the range tightens
+to 0–10 with most of the mass at 0."
+
+**Range update: 0–10 with mass at 0** for remaining Wave 2.
+
+The favorable trend isn't clocks/audio-specific. 2D — the largest
+unplayed sub-wave by count, the most cross-tree-fan-in-heavy
+unplayed sub-wave, and the one with no F/H pre-export advantages
+— came in at zero. The remaining sub-waves (2E qcom_qti, 2F
+oplus_other audio extensions, 2G msm_kgsl/msm-eva/msm_video,
+2I bluetooth) are smaller in count and structurally less
+cross-tree-fan-in-heavy than 2D. The probability that any of them
+fires a meaningful EXPORT ladder is now low.
+
+If 2F (oplus_other audio extensions) or one of {2E, 2G, 2I} also
+lands at 0, recommend moving to "no upstream patch series needed
+for Wave 2 EXPORT additions" status. Currently filed in
+DEFERRED_FOLLOWUPS as "EXPORT_SYMBOL upstream submission cadence";
+that entry can be retired if the trend extends one more sub-wave.
+
+### no-op modules tracked
+
+15 runtime-effective-no-op entries added to `noop_modules.md`
+(first bulk population). All 15 are per-chip touch leaves whose
+compatible doesn't match canoe DT (or matches a `status = "disabled"`
+node). Active touch driver on canoe is Synaptics S3910 via HBP
+(`oplus_bsp_tp_hbp_syna_s3910`).
+
+If Wave 2 closes with 15+ runtime-effective-no-op entries, file
+downstream-optimization task: removing per-chip touch leaves whose
+compatibles don't match canoe DT would save ~3 MB of vendor_dlkm.
+
+### Effort actuals
+
+- Wire-up: ~2 hours (estimate was 4–6).
+- Build-iteration: 1 brunch (estimate was 2–4).
+- Total wall-clock: ~3 hours (estimate was 1 day).
+
+The estimate was conservative; 2D went faster than projected
+because (a) zero OPLUS_ARCH_EXTENDS removed the largest risk
+class, (b) the dispatcher pattern collapsed 22+2+2 modules into
+3 M= dirs, (c) 2H's institutional fixes prevented the v1/v2/v3
+brunch retries that 2H itself needed.
+
+### dt_consistency_check.py
+
+Did not run a separate gate-check this time because the bulk
+runtime-effective-no-op pattern surfaced organically during the
+exports check. The compat-orphan extension proposed in
+DEFERRED_FOLLOWUPS is now well-specified (15 concrete instances
+in 2D) — if 2F or 2G surface a similar pattern, build the tool
+extension then.
+
+### Commits in this sub-wave (chronological)
+
+- `58521b45` 2D prep + calibration prediction
+- `91b2cf28` modules: 7 Kbuild + Makefile pairs (modules tree)
+- `8d0c68c` sm8850-common: TARGET_KERNEL_EXT_MODULES += 7 entries
+
+### Status
+
+**Sub-wave 2D COMPLETE.** Wave 2 source-built ext-modules
+entries: 34 → 41 (modules.ko: 34 → 64, with the touch dispatcher
+producing 22 .ko from one entry).
+
+Next: sub-wave 2F (oplus_other audio extensions, ~21 modules) or
+2E/2G/2I per the wave plan. Decision on signature-mismatch
+checker and compat-orphan dt_consistency_check extension still
+deferred.
+
+---
+
 ## Sub-wave 2B onwards — heterogeneous module backlog
 
 After the clock cluster lands, Wave 2 moves to the OEM-prebuilt-only
