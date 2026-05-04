@@ -1666,6 +1666,138 @@ deferred.
 
 ---
 
+## Sub-wave 2F prep — oplus_other (19 modules across 7 subsystems) (2026-05-04)
+
+Started from `comm -23` between modules.load and updates/ (post-2D
+build). 19 oplus_* modules remain unwired (down from ~21 in the
+original wave plan; the 2 the prep scoped out: `oplus_ft3683g`
+already landed as a 2D-fix follow-up commit `2b068d16` to the
+existing hbp/hbp Kbuild dispatcher).
+
+NOT a single cluster. Mixed structure: 1 cluster that extends an
+existing tree (audio, in our 2C source-built audio-kernel) + 6
+independent subsystems.
+
+### Subsystem breakdown
+
+| Subsystem | Modules | Bazel root | Existing TARGET entry? | OPLUS_ARCH_EXTENDS count |
+|---|---|---|---|---|
+| Audio extensions | 5 (`oplus_audio_aw882xx`, `oplus_audio_daemon`, `oplus_audio_extend`, `oplus_audio_netlink`, `oplus_audio_tfa98xx_v6`) | `vendor/qcom/opensource/audio-kernel/oplus/` | YES (audio-kernel) — extends dispatcher | **663** |
+| Sensors | 5 (`oplus_sensor_deviceinfo`, `oplus_sensor_feedback`, `oplus_sensor_interact`, `oplus_sensor_ir_core`, `oplus_sensor_kookong_ir_spi`) | `vendor/oplus/sensor/kernel/qcom/` | NO (new dispatcher entry) | 0 |
+| Magnetic cover | 4 (`oplus_magcvr_ak09973`, `oplus_magcvr_mxm1120`, `oplus_magnetic_cover`, `oplus_magcvr_notify`) | `vendor/oplus/kernel/device_info/magnetic_cover/` + `magtransfer/` | NO (2 new entries) | 0 |
+| MM kevent | 2 (`oplus_mm_kevent`, `oplus_mm_kevent_fb`) | `vendor/oplus/kernel/multimedia/feedback/` | NO (new dispatcher) | 0 |
+| Secure | 1 (`oplus_secure_common`) | `vendor/oplus/secure/common/bsp/drivers/oplus_secure_common/` | NO | 0 |
+| Sync fence | 1 (`oplus_sync_fence`) | `vendor/oplus/kernel/graphics/` | NO | 0 |
+| Charger | 1 (`oplus_chg_v2`) | `vendor/oplus/kernel/charger/v2/` | NO | 0 |
+
+Total: **19 modules** across **7 new TARGET_KERNEL_EXT_MODULES
+entries** (one is an extension of an existing entry).
+
+### Risk-tier analysis
+
+**Tier 1 (highest risk): Audio sub-cluster (5 modules).**
+
+The audio sub-cluster is the only 2F subsystem with non-zero
+OPLUS_ARCH_EXTENDS — 663 occurrences in
+`vendor/qcom/opensource/audio-kernel/oplus/`. This is the same
+gating mechanism that broke 2C v1/v2 before the 2C v3 fix that
+added `#define OPLUS_ARCH_EXTENDS` to canoeautoconf.h. That fix
+should still be in effect (canoe.bzl explicitly registers the
+oplus_audio_* modules under `#ifdef OPLUS_ARCH_EXTENDS`), but
+we haven't actually built the oplus subdir yet — our existing
+audio-kernel/Kbuild has `obj-y := dsp/ ipc/ soc/ asoc/...` with
+no `oplus/` entry.
+
+Wire-up risk: extending audio-kernel/Kbuild to recurse into
+`oplus/` may surface latent issues that 2C's gate fix didn't
+cover (e.g., MTK-specific paths that need to be CONFIG-stubbed
+out for our qcom build).
+
+The 5 audio modules' Bazel definitions (in
+`vendor/qcom/opensource/audio-kernel/audio_modules.bzl`) confirm
+qcom-build paths but the SAME modules are also defined in
+`vendor/oplus/kernel/audio/bazel/oplus_local_modules.bzl` with
+DIFFERENT names (`snd-soc-aw882xx` vs `oplus_audio_aw882xx`)
+and MTK-only ko_deps. The qcom audio-kernel registration is
+the canonical one for canoe.
+
+**Tier 2 (medium): Charger v2 (1 module, 153 .c files).**
+
+Single .ko output but big — 153 .c files in `vendor/oplus/kernel/charger/v2/`
+(plus a `ufcs/` subdir). The Bazel module name is per-target
+(`canoe_oplus_chg_v2`) — there's a target/name mapping that
+ships as `oplus_chg_v2.ko`. Existing in-tree `Makefile` may be
+informative for the obj list. Build-time dependencies likely
+include qcom power-management symbols and
+oplus_bsp_boot_projectinfo / device_info (already source-built).
+
+**Tier 3 (low): All other 6 subsystems (12 modules).**
+
+Zero OPLUS_ARCH_EXTENDS, structurally simple, mostly leaf-pattern
+or small dispatchers (e.g., 5 sensors in one M= dir = sensor
+dispatcher; 4 magcvr modules in one M= dir = mag dispatcher).
+Standard 2H/2D wire-up pattern applies cleanly.
+
+### Recommended sub-iteration plan
+
+Three sub-iterations of decreasing risk profile, each runnable
+independently:
+
+- **2F.1** — Audio extensions (5 modules). Test whether 2C's
+  OPLUS_ARCH_EXTENDS gate fix extends to `oplus/` subdir of
+  audio-kernel. Iteration is small, isolated to one TARGET
+  entry's Kbuild. Calibration impact: confirms whether the
+  EXPORT projection holds for the highest-risk 2F sub-cluster.
+- **2F.2** — All Tier-3 subsystems together (sensors + magcvr +
+  mm_kevent + secure_common + sync_fence + ft3683g
+  follow-through, **13 modules across 6 TARGET entries**). Same
+  pattern as 2D's smaller subsystems. Should land green on first
+  brunch given the 2H/2D institutional fixes.
+- **2F.3** — Charger v2 (1 module, 153 .c). Largest module by
+  .c count in Wave 2. Run last because if it has a unique issue
+  class, isolating it from the rest of 2F's wire-up reduces
+  iteration time.
+
+### EXPORT_SYMBOL projection (per cluster)
+
+- 2F.1 audio: **0–5 EXPORTs**. The 663 OPLUS_ARCH_EXTENDS gates
+  may surface latent EXPORT requirements that 2C didn't catch.
+  Lower bound 0 if 2C's gate fix is truly comprehensive; upper
+  bound 5 if a few oplus-specific exports surface.
+- 2F.2 Tier-3: **0 EXPORTs** projected. Standard pattern; same
+  signal as 2H/2D for this class.
+- 2F.3 charger: **0 EXPORTs** projected. Charger consumes power
+  framework APIs (already exported); no producer-to-other-module
+  exports expected.
+
+**Aggregate 2F projection: 0–5 EXPORTs.** Per the calibration
+prediction block: 2F at 0 leaves the recalibrated 0–10 range
+mostly unchanged but adds another data point for "no upstream
+patch series needed for Wave 2." 2F at 1–5 confirms the
+recalibrated lower bound but suggests audio might be the
+exception class.
+
+### dt_consistency_check.py applicability
+
+Sensors and magnetic-cover register platform_drivers with
+DT compatibles. Worth running the tool against the full
+build artifact after 2F.2 to surface any compat-orphan candidates
+(potential trigger for the deferred compat-orphan tool extension).
+
+### Effort projection
+
+- 2F.1 audio: 1–4 hours (medium uncertainty due to
+  OPLUS_ARCH_EXTENDS risk)
+- 2F.2 Tier-3: 2–4 hours (mechanical)
+- 2F.3 charger: 1–3 hours
+- Total: 4–11 hours expected, 1.5 days upper bound
+
+### Status
+
+Prep done 2026-05-04. Wire-up next, in 2F.1 → 2F.2 → 2F.3 order.
+
+---
+
 ## Sub-wave 2B onwards — heterogeneous module backlog
 
 After the clock cluster lands, Wave 2 moves to the OEM-prebuilt-only
