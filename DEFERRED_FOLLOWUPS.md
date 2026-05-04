@@ -261,6 +261,18 @@ landed with zero EXPORT additions; the file isn't needed yet.
 non-trivial EXPORT addition (creates `kernel_export_additions.md`
 organically), OR after 4 waves accumulate (whichever comes first).
 
+**Update 2026-05-04 (post-2F.1):** 7 consecutive sub-waves at 0
+EXPORTs (Phase 4 keyevent_handler + 2A + 2A.5 + 2C + 2H + 2D +
+2F.1). Cumulative Wave 2 EXPORT count: **0**. The 50–150 estimate
+in EXPORT_SYMBOL_HANDLING.md was wrong by orders of magnitude.
+
+**Retirement criteria (refined):** Retire this entry after Wave 2
+closes AND cumulative EXPORT count is ≤ 2. Threshold is
+cumulative across Wave 2, not per-sub-wave. Anything more than 2
+warrants a small upstream patch series even if the modal sub-wave
+is zero. Currently 2 EXPORTs of buffer remaining across 2F.2 +
+2F.3 + any late surprises before retention is triggered.
+
 ---
 
 ## Display-cluster export gaps surfaced by exports_superset_check (2026-05-02)

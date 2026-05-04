@@ -434,6 +434,13 @@ preserving the source-tree layout. The depmod step then flat-installs
 to `vendor_dlkm/lib/modules/foo.ko`. Look at the final installed
 location, not the build-tree intermediate.
 
+**Verification rule of thumb:** check `find updates/ -name '*.ko'`
+(recursive) when iterating, NOT `ls updates/*.ko` (flat). The flat
+layout only appears post-depmod in `vendor_dlkm/lib/modules/`. A
+flat-only check will report "module missing" even when it built
+correctly under a multi-subdir M= dir. (Cost two iterations of
+debugging in 2F.1 wire-up before the lesson landed.)
+
 (Surfaced 2026-05-04 in 2F.1 wire-up; v1+v2 silently produced 0
 audio modules until canoeauto.conf was updated alongside
 canoeautoconf.h.)

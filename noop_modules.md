@@ -4,9 +4,31 @@ Tracks source-built modules that ship for build-graph completeness but
 either don't register a platform_driver, register one whose compatible
 doesn't bind on canoe, or short-circuit at runtime. See
 DEFERRED_FOLLOWUPS.md "noop_modules.md tracking across Wave 2" for
-context on the two sub-classes.
+context on the sub-classes.
 
 Format: one entry per module, classified.
+
+## Three failure-mode classes
+
+Naming all three for completeness, even when only the first two have
+been observed in Wave 2 to date:
+
+1. **obvious-stub** — init/exit return 0, no driver registration.
+   Source review reveals the no-op directly. rf_cable_monitor.
+2. **runtime-effective-no-op** — real driver registration with
+   probe(), but `compatible` doesn't match canoe DT (or matches a
+   `status = "disabled"` node). Module loads, probe registers, never
+   binds. Per-chip touch leaves are the bulk of this class.
+3. **config-asymmetry no-op** — Make-side and C-side CONFIG flags
+   diverge: `export CONFIG_X=m` is set in `*auto.conf` (so the .ko
+   builds and links) but `#define CONFIG_X 1` is NOT set in
+   `*autoconf.h` (so source `#ifdef CONFIG_X` blocks compile out).
+   Module is built, installed, and loaded — but its functional code
+   paths are stripped. Module appears to be working but is a runtime
+   no-op. **Not yet observed unintentionally**, but called out so
+   future wire-ups know to check both sides. Surfaced by 2F.1's
+   silent-skip diagnosis (the inverse failure: only .h was set,
+   nothing built).
 
 ## obvious-stub class
 

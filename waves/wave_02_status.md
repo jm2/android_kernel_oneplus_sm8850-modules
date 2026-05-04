@@ -1906,12 +1906,20 @@ Brunch v3: 4:54.
 **2F.1 actual = 0**. Per the threshold pre-decision (recorded
 before build): **range tightens to 0–5 with near-certain mass
 at 0; trend conclusively NOT artifact of any specific subsystem
-class. Audio is NOT sui generis.** The 663 OPLUS_ARCH_EXTENDS
+class. Audio-on-canoe is NOT sui generis.** The 663 OPLUS_ARCH_EXTENDS
 gates didn't surface latent EXPORT requirements because the
 qcom build path compiles out the OPLUS_FEATURE_SPEAKER_MUTE /
 AUDIO_FTM / FADE_IN / TFA98XX_VI_FEEDBACK code blocks anyway
 (those defines aren't in canoeautoconf.h on purpose — OEM
 ships the qcom audio modules with those features compiled out).
+
+**Generalization caveat**: the conclusion is "the canoe-applicable
+subset of audio's gated code doesn't have an EXPORT ladder," not
+"audio in general doesn't." A different SoC port (sm8650, sm8550,
+MTK) of the same audio source could have different gates set and
+might surface EXPORTs that didn't show up here. Future Wave 2-style
+work on a different SoC should re-test rather than inherit this
+conclusion.
 
 **Seven consecutive sub-waves at 0 EXPORTs** (Phase 4 keyevent_handler
 proof-point + 2A + 2A.5 + 2C + 2H + 2D + 2F.1).
@@ -1980,6 +1988,16 @@ by checking `updates/oplus_audio_*.ko` and finding nothing.
 - Diagnosis time: ~30 min on the silent-skip bug
 - Total: ~2 hours (estimate was 1–4 hours; landed in the middle)
 
+### Commits in this sub-wave (chronological)
+
+- `a4f314f` 2F prep verifications + threshold pre-decision
+- `cd23a4d5` 2F.1 wire-up — 5 oplus_audio_* via existing audio-kernel
+  (canoeautoconf.h + per-leaf Kbuild canoe cases + audio-kernel
+  Kbuild obj-y additions)
+- `f592a1fe` 2F.1 fix — Make-side CONFIG flags + collapsed obj-y
+  (resolved the silent-skip after v1+v2 produced 0 .ko)
+- `5ee54f12` 2F.1 retro
+
 ### Status
 
 **Sub-wave 2F.1 COMPLETE.** Wave 2 source-built ext-modules: 35 ->
@@ -1989,6 +2007,56 @@ Total .ko outputs: 64 -> 69.
 Next: 2F.2 (Tier-3 batch — sensors, magcvr, mm_kevent, secure,
 sync_fence — 13 modules across 6 ext-module entries) per the
 2F sub-iteration plan.
+
+---
+
+## EXPORT-count threshold pre-decisions for 2F.2 and 2F.3 (2026-05-04)
+
+Recording the calibration update rules BEFORE the builds run, to
+prevent post-hoc rationalization. Both decisions assume the prior
+seven sub-waves' "0 EXPORTs" trend is the prior, and any non-zero
+result is the surprise.
+
+### 2F.2 (Tier-3 batch, 13 modules, projection 0)
+
+- **0 EXPORTs**: trend continues as prior; no calibration update.
+  Eight projection-matching data points; the projection IS the
+  prior at this point.
+- **1–3 EXPORTs**: trend holds, but Tier-3 has surface I didn't
+  predict. Document specifically which subsystem(s) and which
+  symbols; review whether the prep-section grep methodology
+  missed something generalizable.
+- **4+ EXPORTs**: unexpected. Recalibrate the range upward. Open
+  a "Tier-3 EXPORT analysis" task and don't proceed to 2F.3 until
+  characterized.
+
+### 2F.3 (charger v2, 1 module / 153 .c files, projection 0)
+
+- **0 EXPORTs**: trend continues even at scale (153 .c files
+  is an order of magnitude larger than typical Wave 2 modules).
+  Strong final confirmation that the prior holds across all
+  Wave 2 module-size classes.
+- **1–2 EXPORTs**: charger has v1/v2-style API delta to
+  characterize (analogous to oplus_hbp_core's
+  hbp_dev_ctrl_hw_reset / hbp_dev_power_type_ctrl finding).
+  Apply the WIRE_UP_RECIPE Step 7.5 nm-check methodology to
+  determine whether it's a true runtime issue or a false alarm
+  (we source-build both producer and consumer).
+- **3+ EXPORTs**: recalibrate. Charger is the largest module;
+  if it has a real EXPORT ladder, the prior needs adjustment for
+  module-size effect, not just per-sub-wave count.
+
+### EXPORT_SYMBOL upstream cadence retirement criteria (refined)
+
+Earlier I noted "retire when Wave 2 closes." Tightening: retire
+after Wave 2 closes **AND** the cumulative EXPORT count across
+Wave 2 is **≤ 2**. Anything more warrants a small upstream patch
+series even if the modal sub-wave is zero. Threshold is cumulative,
+not per-sub-wave.
+
+Current cumulative count: **0** (over 7 sub-waves). Buffer remaining
+before triggering retention: 2 EXPORTs across 2F.2 + 2F.3 + any
+late surprises.
 
 ---
 
