@@ -5,6 +5,14 @@
 ccflags-y += -I$(src)
 ccflags-y += -DCONFIG_OPLUS_MAGCVR_NOTIFY
 
+# OEM source has compatible-string initializers exactly matching
+# i2c_device_id::name's size (20 chars) so the null terminator is
+# elided. Newer clang flags this with -Werror=unterminated-string-
+# initialization. OEM presumably built with an older toolchain or
+# specific suppression. Match OEM behavior bug-for-bug rather than
+# patch the strings (which would change the runtime compatible).
+ccflags-y += -Wno-error=unterminated-string-initialization
+
 obj-m += oplus_magnetic_cover.o
 oplus_magnetic_cover-y := magcvr_src/abstract/magnetic_cover_core.o
 
