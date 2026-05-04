@@ -2130,7 +2130,7 @@ loop in shell. Filed as deferred followup for the tool itself.
 - `fdaeeff0` 2F.2 fix v1: magcvr -Werror=unterminated-string-init
 - `5f477ace` 2F.2 fix v2: -I$(src) for sync_fence trace path
 - `13fce6a0` 2F.2 fix v3: secure_common single-source self-reference
-- (this commit) 2F.2 retro
+- `91ec59fe` 2F.2 retro
 
 ### Status
 
@@ -2138,9 +2138,71 @@ loop in shell. Filed as deferred followup for the tool itself.
 35 → 41 entries. Total .ko outputs: 69 → 82.
 
 Next: 2F.3 (charger v2, 1 module / 153 .c files) per the 2F
-sub-iteration plan. The size-scaling test for the calibration:
-0 EXPORTs at 153 .c files would be the strongest possible
-confirmation of the prior.
+sub-iteration plan.
+
+---
+
+## Sub-wave 2F.3 pre-flight decisions (2026-05-04)
+
+Three things to pre-decide before the build, recorded here for
+discipline:
+
+### -Werror suppression strategy
+
+**Default**: per-warning suppression via
+`ccflags-y += -Wno-error=<specific-warning>` in the charger
+Kbuild, mirroring 2F.2's magcvr fix. Preserves error detection
+for warnings the OEM source isn't actually tripping.
+
+**Escalation**: if 3+ different `-Werror` classes hit in a single
+brunch iteration, switch to broader `-Wno-error` (apply
+`ccflags-y += -Wno-error` unconditionally to the charger Kbuild)
+to avoid per-iteration whack-a-mole. 153 .c files = larger
+surface for OEM-source toolchain-newer-than-OEM bugs.
+
+### Symbol surface characterization (pre-build)
+
+charger v2 is a "large module with internal exports for sub-
+implementations," NOT a "true cross-tree consumer at scale":
+
+- **24 unique extern functions consumed** from the kernel /
+  other modules — modest consumer surface (~5x typical Wave 2
+  module, not 30x as the .c file count suggested).
+- **49 internal EXPORT_SYMBOL declarations** — these are
+  charger-internal exports for the sub-implementations
+  (gauge_ic, voocphy, ufcs_ic, switching_ic, chargepump_ic,
+  wireless_ic, debug). They get auto-merged within the single
+  M= dir; not externally visible.
+- Many of the 24 externs are MTK-paths
+  (`Charger_Detect_Init`, `mt_power_off`, `ppm_sys_boost_*`)
+  that are CONFIG-gated out on canoe (qcom). Effective consumer
+  surface on canoe is lower than 24.
+
+So 0 EXPORTs at 2F.3 is **a confirmation of the prior**, but not
+the "strongest possible" the .c-file count suggested. The
+genuine size-scaling test would be a module with hundreds of
+distinct external API consumers, which charger v2 isn't. The
+test is still informative — confirms the trend isn't artifact
+of small modules — but not as decisive as I framed it in the
+2F.2 retro.
+
+### EXPORT-count threshold (recap of pre-decision from a4f314f)
+
+- **0 EXPORTs**: trend continues at scale
+- **1–2 EXPORTs**: charger has v1/v2-style API delta to
+  characterize via the Step 7.5 nm-check methodology
+- **3+ EXPORTs**: recalibrate; module-size effect needs
+  adjustment
+
+### Cumulative retirement timing
+
+Wait until **all** remaining sub-waves clear before retiring the
+EXPORT_SYMBOL upstream cadence followup. If 2F.3 lands at 1–2
+EXPORTs (within the cumulative-≤2 buffer) and we retire at 2F.3
+close, but then 2E or 2G surfaces 1+ more, we'd have to un-retire
+with audit-trail/doc rework. Cost of holding open one more
+sub-wave: zero. Cost of premature retirement: real. Retire at
+Wave 2 closeout (after 2I), not at any single sub-wave's close.
 
 ---
 

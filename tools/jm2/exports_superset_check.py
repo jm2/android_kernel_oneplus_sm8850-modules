@@ -88,8 +88,10 @@ def main(argv):
                     "superset-rule static check (v1).",
     )
     ap.add_argument("--source-built-glob", required=True,
+                    action="append",
                     help="Glob for source-built .ko files "
-                         "(e.g. out/.../updates/*.ko or **/*.ko).")
+                         "(e.g. out/.../updates/*.ko or **/*.ko). "
+                         "Repeat for multiple globs.")
     ap.add_argument("--oem-dir", required=True,
                     help="Directory containing OEM-prebuilt .ko files "
                          "(e.g. device/oneplus/infiniti-kernel).")
@@ -104,9 +106,13 @@ def main(argv):
         print(f"error: oem dir not found: {oem_dir}", file=sys.stderr)
         return 2
 
-    src_paths = [Path(p) for p in glob(args.source_built_glob, recursive=True)]
+    src_paths_set = set()
+    for g in args.source_built_glob:
+        for p in glob(g, recursive=True):
+            src_paths_set.add(Path(p))
+    src_paths = sorted(src_paths_set)
     if not src_paths:
-        print(f"error: no source-built .ko matched glob: "
+        print(f"error: no source-built .ko matched any glob: "
               f"{args.source_built_glob}", file=sys.stderr)
         return 2
 
