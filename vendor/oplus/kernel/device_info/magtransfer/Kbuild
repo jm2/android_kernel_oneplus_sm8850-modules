@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
+MODULE = oplus_magcvr_notify
+$(MODULE)-objs := magcvr_notify.o
+obj-m += $(MODULE).o

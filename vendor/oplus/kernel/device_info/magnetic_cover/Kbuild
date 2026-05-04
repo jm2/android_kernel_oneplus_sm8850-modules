@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Magcvr cluster dispatcher: 3 modules from one M= dir
+# (Bazel defines a 4th, oplus_magcvr_mkh100a, NOT in canoe modules.load
+# — skipped here.)
+ccflags-y += -I$(src)
+ccflags-y += -DCONFIG_OPLUS_MAGCVR_NOTIFY
+
+obj-m += oplus_magnetic_cover.o
+oplus_magnetic_cover-y := magcvr_src/abstract/magnetic_cover_core.o
+
+obj-m += oplus_magcvr_ak09973.o
+oplus_magcvr_ak09973-y := magcvr_src/hardware/magcvr_ak09973.o
+
+obj-m += oplus_magcvr_mxm1120.o
+oplus_magcvr_mxm1120-y := magcvr_src/hardware/magcvr_mxm1120.o

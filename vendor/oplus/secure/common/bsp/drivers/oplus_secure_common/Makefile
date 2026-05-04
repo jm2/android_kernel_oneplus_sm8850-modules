@@ -1,14 +1,6 @@
-KBUILD_OPTIONS += CONFIG_OPLUS_SECURE_COMMON=m
-KBUILD_OPTIONS += OPLUS_OUT_OF_TREE_KO=y
-
-ifeq ($(CHIPSET_COMPANY), QCOM)
-KBUILD_OPTIONS += CONFIG_OPLUS_SECURE_QCOM=y
-KBUILD_OPTIONS += CONFIG_QCOM_QSEELOG_ENCRYPT=y
-else ifeq ($(CHIPSET_COMPANY), MTK)
-KBUILD_OPTIONS += CONFIG_OPLUS_SECURE_MTK=y
-endif
-
+# SPDX-License-Identifier: GPL-2.0-only
+# Bazel ko_deps: soc-repo:qcom-scm (kernel-internal, auto-resolved).
 KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
 M ?= $(shell pwd)
 modules modules_install clean:
-	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(KBUILD_OPTIONS) $(@)
+	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(@)

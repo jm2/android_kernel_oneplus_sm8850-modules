@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: GPL-2.0-only
+ccflags-y += -DCONFIG_OPLUS_SYNC_FENCE
+obj-m += oplus_sync_fence.o

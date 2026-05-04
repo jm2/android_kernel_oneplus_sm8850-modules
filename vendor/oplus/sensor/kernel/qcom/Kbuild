@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Sensor cluster dispatcher: 5 modules from one M= dir.
+# Internal symvers (oplus_sensor_ir_core -> oplus_sensor_kookong_ir_spi,
+# oplus_sensor_feedback -> oplus_sensor_interact) auto-merge in this M=.
+ccflags-y += -I$(src) -I$(src)/oplus_consumer_ir
+ccflags-y += -DCFG_OPLUS_ARCH_IS_QCOM \
+             -DCONFIG_OPLUS_SYSTEM_KERNEL_QCOM \
+             -DCONFIG_OPLUS_SENSOR_FB_QC \
+             -DCONFIG_OPLUS_SENSOR_DRM_PANEL_NOTIFY \
+             -DCONFIG_OPLUS_SENSOR_DRM_PANEL_ADFR_MIN_FPS \
+             -DCONFIG_OPLUS_SENSOR_USE_SCREENSHOT_INFO \
+             -DOPLUS_FEATURE_DISPLAY
+
+obj-m += oplus_sensor_ir_core.o
+oplus_sensor_ir_core-y := oplus_consumer_ir/oplus_ir_core.o
+
+obj-m += oplus_sensor_kookong_ir_spi.o
+oplus_sensor_kookong_ir_spi-y := oplus_consumer_ir/oplus_ir_spi.o
+
+obj-m += oplus_sensor_deviceinfo.o
+oplus_sensor_deviceinfo-y := \
+    sensor/oplus_sensor_devinfo.o \
+    sensor/oplus_press_cali_info.o \
+    sensor/oplus_pad_als_info.o
+
+obj-m += oplus_sensor_feedback.o
+oplus_sensor_feedback-y := sensor/oplus_sensor_feedback/sensor_feedback.o
+
+obj-m += oplus_sensor_interact.o
+oplus_sensor_interact-y := sensor/oplus_ssc_interact/oplus_ssc_interact.o

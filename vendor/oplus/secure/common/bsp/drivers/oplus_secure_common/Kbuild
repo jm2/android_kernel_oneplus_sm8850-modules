@@ -1,17 +1,11 @@
-ifeq ($(CONFIG_OPLUS_SECURE_QCOM),y)
-ccflags-y += -DQCOM_PLATFORM
-else ifeq ($(CONFIG_OPLUS_SECURE_MTK),y)
-ccflags-y += -DMTK_PLATFORM
-endif
+# SPDX-License-Identifier: GPL-2.0-only
+# Bypass the existing chipset-conditional gates: we always build for
+# qcom in this tree, and obj-m unconditionally rather than gated by
+# CONFIG_OPLUS_SECURE_COMMON (which the existing Makefile passes via
+# KBUILD_OPTIONS — works only if CHIPSET_COMPANY env var is set, which
+# brunch doesn't always do).
+ccflags-y += -DQCOM_PLATFORM -DQCOM_QSEELOG_ENCRYPT -DCONFIG_OPLUS_SECURE_COMMON_MODULE=1
 
-ifeq ($(OPLUS_OUT_OF_TREE_KO),y)
-ccflags-y += -DCONFIG_OPLUS_SECURE_COMMON_MODULE=1
-endif
-
-ifeq ($(CONFIG_QCOM_QSEELOG_ENCRYPT),y)
-ccflags-y += -DQCOM_QSEELOG_ENCRYPT
-endif
-
-ifneq ($(TARGET_PRODUCT),qssi)
-obj-$(CONFIG_OPLUS_SECURE_COMMON) += oplus_secure_common.o
-endif
+MODULE = oplus_secure_common
+$(MODULE)-objs := oplus_secure_common.o
+obj-m += $(MODULE).o

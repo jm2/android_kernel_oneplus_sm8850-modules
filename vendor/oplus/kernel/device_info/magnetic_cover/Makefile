@@ -1,11 +1,12 @@
-#
-# Makefile for the magnetic cover drivers.
-#
-oplus_magcvr_core-y += magcvr_src/abstract/magnetic_cover_core.o
-obj-$(CONFIG_OPLUS_MAGCVR_CORE) += oplus_magcvr_core.o
+# SPDX-License-Identifier: GPL-2.0-only
+# Bazel ko_deps: oplus_magnetic_cover deps oplus_magcvr_notify (sibling
+# magtransfer/ tree). The hw leaves auto-merge with oplus_magnetic_cover
+# in this M= dir.
+KBUILD_EXTRA_SYMBOLS := \
+    $(abspath $(CURDIR)/../magtransfer/Module.symvers)
+export KBUILD_EXTRA_SYMBOLS
 
-oplus_magcvr_ak09973-y += magcvr_src/hardware/magcvr_ak09973.o
-obj-$(CONFIG_OPLUS_MAGCVR_AK09973) += oplus_magcvr_ak09973.o
-
-oplus_magcvr_mxm1120-y += magcvr_src/hardware/magcvr_mxm1120.o
-obj-$(CONFIG_OPLUS_MAGCVR_MXM1120) += oplus_magcvr_mxm1120.o
+KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
+M ?= $(shell pwd)
+modules modules_install clean:
+	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(@)

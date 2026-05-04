@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# MM kevent dispatcher: 2 modules; oplus_mm_kevent_fb deps oplus_mm_kevent
+# (auto-merged in this M= dir).
+ccflags-y += -I$(src)/common -DCONFIG_OPLUS_FEATURE_MM_FEEDBACK
+
+obj-m += oplus_mm_kevent.o
+oplus_mm_kevent-y := common/oplus_mm_kevent.o
+
+obj-m += oplus_mm_kevent_fb.o
+oplus_mm_kevent_fb-y := common/oplus_mm_kevent_fb.o
