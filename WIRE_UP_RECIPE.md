@@ -441,6 +441,32 @@ flat-only check will report "module missing" even when it built
 correctly under a multi-subdir M= dir. (Cost two iterations of
 debugging in 2F.1 wire-up before the lesson landed.)
 
+---
+
+## Step 7.7 — When OEM-source -Wunterminated-string-initialization fires
+
+Newer clang treats `-Wunterminated-string-initialization` as
+`-Werror` (warns when a string literal exactly fills a fixed-size
+char array, eliding the null terminator). OEM source frequently
+trips this in `i2c_device_id::name` / `of_device_id::compatible`
+fields where `I2C_NAME_SIZE = 20` exactly matches the compatible
+string length.
+
+OEM presumably built with an older toolchain that didn't flag
+this, or had a per-module suppression. Their .ko ships with the
+elided null terminator anyway — the of_match / i2c_match logic
+treats name as bounded by the size, not the terminator, so the
+match still works.
+
+**Match OEM bug-for-bug**: add `-Wno-error=unterminated-string-initialization`
+to `ccflags-y` in the affected Kbuild. Don't patch the source
+to truncate the string by one char — that would change the
+runtime DT/i2c match and would break the binding contract.
+
+(Surfaced 2026-05-04 in 2F.2 magcvr_ak09973 + magcvr_mxm1120.
+The `oplus,magcvr_ak09973` literal is 20 chars + null = 21 bytes
+into a `char name[20]`; the null is silently elided.)
+
 (Surfaced 2026-05-04 in 2F.1 wire-up; v1+v2 silently produced 0
 audio modules until canoeauto.conf was updated alongside
 canoeautoconf.h.)

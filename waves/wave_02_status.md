@@ -2054,9 +2054,93 @@ Wave 2 is **≤ 2**. Anything more warrants a small upstream patch
 series even if the modal sub-wave is zero. Threshold is cumulative,
 not per-sub-wave.
 
-Current cumulative count: **0** (over 7 sub-waves). Buffer remaining
-before triggering retention: 2 EXPORTs across 2F.2 + 2F.3 + any
-late surprises.
+Current cumulative count: **0** (over 8 sub-waves, post-2F.2).
+Buffer remaining before triggering retention: 2 EXPORTs across
+2F.3 + 2E + 2G + 2I + any late surprises.
+
+---
+
+## Sub-wave 2F.2 retrospective (2026-05-04)
+
+### Outcome
+
+**GREEN. 13/13 pass-exact. EXPORT count = 0.**
+
+| Subsystem | Module | src .ko | OEM .ko | verdict |
+|---|---|---|---|---|
+| Sensors | oplus_sensor_ir_core | 29992 | 29648 | pass-exact (3/3) |
+| Sensors | oplus_sensor_kookong_ir_spi | 21504 | 21472 | pass-exact (0/0) |
+| Sensors | oplus_sensor_deviceinfo | 94240 | 91864 | pass-exact (2/2) |
+| Sensors | oplus_sensor_feedback | 68128 | 62672 | pass-exact (2/2) |
+| Sensors | oplus_sensor_interact | 49320 | 45544 | pass-exact (0/0) |
+| Magcvr | oplus_magcvr_notify | 13520 | 14152 | pass-exact (5/5) |
+| Magcvr | oplus_magnetic_cover | 74904 | 98744 | pass-exact (6/6) |
+| Magcvr | oplus_magcvr_ak09973 | 38536 | 41968 | pass-exact (0/0) |
+| Magcvr | oplus_magcvr_mxm1120 | 39680 | 42040 | pass-exact (0/0) |
+| MM kevent | oplus_mm_kevent | 28216 | 28152 | pass-exact (2/2) |
+| MM kevent | oplus_mm_kevent_fb | 47784 | 47272 | pass-exact (2/2) |
+| Secure | oplus_secure_common | 30912 | 31552 | pass-exact (0/0) |
+| Sync fence | oplus_sync_fence | 36296 | 38096 | pass-exact (0/0) |
+
+Brunch v4: 4:50.
+
+### Calibration update — per pre-decision threshold
+
+**2F.2 actual = 0**. Per the threshold pre-decision (recorded
+2026-05-04 before build): **trend continues; no calibration
+update**. Eight consecutive sub-waves at 0 EXPORTs.
+
+### Iteration progression — 4 to green
+
+Three concrete bug classes, one per iteration. Same iteration-tight
+pattern as 2H/2D (each iteration progressed exactly one bug deeper).
+
+| v | Bug | Module | Already in recipe? |
+|---|---|---|---|
+| v1 | `-Werror=unterminated-string-initialization` (clang newer than OEM) | magcvr_ak09973 + mxm1120 | NEW |
+| v2 | Missing `-I$(src)` for `TRACE_INCLUDE_PATH = ./` | sync_fence | NEW |
+| v3 | Single-source self-reference (`-objs` indirection) | secure_common | YES (2H Step 2) |
+| v4 | GREEN | all 13 | — |
+
+v3 was a pre-known bug class — secure_common matched its own
+.c name. v1 and v2 are new entries to WIRE_UP_RECIPE Step 7.7
+(unterminated-string-init OEM source bugs) and a refinement to
+Step 2 (always include `-I$(src)` when bzl has `includes = ["."]`).
+
+### exports_superset_check tool argparse limitation
+
+Found during verification: passing multiple `--source-built-glob`
+args to the tool causes argparse to retain only the LAST one.
+The tool was written assuming a single glob. Workaround: per-module
+loop in shell. Filed as deferred followup for the tool itself.
+
+### Effort actuals
+
+- Wire-up: ~1.5 hours (6 Kbuild + Makefile pairs, BoardConfigCommon
+  edit)
+- Build-iteration: 4 brunch runs (~20 min wall clock)
+- Diagnosis time: ~10 min (each iteration's bug was directly
+  diagnosable from the error)
+- Total: ~2.5 hours (estimate was 2-4 hours; landed in middle)
+
+### Commits in this sub-wave (chronological)
+
+- `0e9c2490` 2F.2 wire-up (modules tree)
+- `27df77a` sm8850-common: TARGET_KERNEL_EXT_MODULES += 2F.2 sextet
+- `fdaeeff0` 2F.2 fix v1: magcvr -Werror=unterminated-string-init
+- `5f477ace` 2F.2 fix v2: -I$(src) for sync_fence trace path
+- `13fce6a0` 2F.2 fix v3: secure_common single-source self-reference
+- (this commit) 2F.2 retro
+
+### Status
+
+**Sub-wave 2F.2 COMPLETE.** Wave 2 source-built ext-modules:
+35 → 41 entries. Total .ko outputs: 69 → 82.
+
+Next: 2F.3 (charger v2, 1 module / 153 .c files) per the 2F
+sub-iteration plan. The size-scaling test for the calibration:
+0 EXPORTs at 153 .c files would be the strongest possible
+confirmation of the prior.
 
 ---
 

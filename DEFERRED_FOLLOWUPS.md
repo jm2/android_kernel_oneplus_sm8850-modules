@@ -548,6 +548,27 @@ documented.
 
 ---
 
+## exports_superset_check.py: support multiple --source-built-glob args
+
+**Surfaced:** 2026-05-04 during 2F.2 verification.
+
+**Context:** Passing multiple `--source-built-glob` flags to the tool
+causes argparse to retain only the LAST one. Subsequent multi-module
+verifications had to fall back to a per-module shell loop.
+
+**Concrete tasks:**
+
+1. Change argparse setup from default `store` action to
+   `action='append'` so repeated `--source-built-glob` flags
+   accumulate.
+2. Update the glob expansion to iterate over every accumulated glob.
+3. Optionally accept multiple positional arguments instead.
+
+**When to act:** Cosmetic; not blocking any sub-wave. Cleanup pass
+after Wave 2 closes.
+
+---
+
 ## Format
 
 To add new entries:
