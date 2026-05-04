@@ -1796,6 +1796,93 @@ build artifact after 2F.2 to surface any compat-orphan candidates
 
 Prep done 2026-05-04. Wire-up next, in 2F.1 → 2F.2 → 2F.3 order.
 
+### Pre-flight verifications (2026-05-04, post-review)
+
+Four follow-ups before 2F.1 wire-up:
+
+**(1) ifdef OPLUS_* gates beyond OPLUS_ARCH_EXTENDS in audio sources.**
+
+`grep -rho '#if[a-z]*\s*OPLUS_[A-Z_0-9]*'` across the 5 audio
+module source dirs surfaced 5 additional gates beyond
+OPLUS_ARCH_EXTENDS that 2C's fix doesn't cover:
+
+  - `OPLUS_FEATURE_SPEAKER_MUTE` (aw882xx + tfa98xx-v6)
+  - `OPLUS_FEATURE_AUDIO_FTM` (tfa98xx-v6)
+  - `OPLUS_FEATURE_FADE_IN` (tfa98xx-v6)
+  - `OPLUS_FEATURE_TFA98XX_VI_FEEDBACK` (tfa98xx-v6)
+  - `OPLUS_CALIBRATION` (tfa98xx-v6, in `#ifndef` form)
+
+OEM Bazel sets these via per-module `local_defines` on the MTK-side
+snd-soc-* variants. The qcom-side audio_modules.register entries
+DON'T pass these defines via the macro; they're expected via
+canoeautoconf.h. Currently canoeautoconf.h only has
+`#define OPLUS_ARCH_EXTENDS 1` — the other 4 are absent.
+
+Wire-up will need to add these to canoeautoconf.h (or pass via
+KBUILD_OPTIONS / EXTRA_CFLAGS in the audio Kbuild). The
+`#ifndef OPLUS_CALIBRATION` case is interesting: defining it would
+COMPILE OUT a default code path; leaving it undefined keeps the
+default. Default behavior is correct unless the OEM enables
+calibration, which we should preserve. Don't define OPLUS_CALIBRATION.
+
+**(2) Authoritative Bazel registration for canoe (evidence).**
+
+`vendor/qcom/opensource/audio-kernel/build/canoe.bzl` explicitly
+references the qcom audio_modules.bzl entries by name:
+`oplus_audio_extend`, `oplus_audio_tfa98xx_v6`, `oplus_audio_aw882xx`,
+`oplus_audio_daemon`, `oplus_audio_netlink`. canoe.bzl does NOT
+reference `vendor/oplus/kernel/audio/bazel/`. The vendor/oplus
+audio bzl is MTK-only (all ko_deps under
+`kernel_device_modules-{kernel_version}/sound/soc/mediatek/...`).
+
+**Decision: extend the existing audio-kernel Kbuild dispatcher
+to recurse into oplus/ subdir.** Mirrors qcom audio_modules.bzl
+entries directly; ignore vendor/oplus/kernel/audio/bazel/ for this
+sub-wave (would only matter if we ported to MTK).
+
+**(3) noop_modules.md count consistency.**
+
+Verified: noop_modules.md tally = 16 runtime-effective-no-op + 1
+obvious-stub = 17 total. wave_02_status.md retrospective text
+uses 16 throughout (no 15-vs-16 inconsistency in the current
+file state). synaptics_tcm2 is explicitly tracked as
+runtime-effective-no-op with all 3 of its compats analyzed.
+
+**(4) charger/v2 existing Makefile is rich and authoritative.**
+
+`vendor/oplus/kernel/charger/v2/Makefile` has full obj-y rules
+across many subdirs (gauge_ic, voocphy, ufcs_ic, switching_ic,
+chargepump_ic, wireless_ic, debug) with CONFIG-flag gating for
+each silicon variant. Includes `KBUILD_LDS_MODULE_ATTACH =
+oplus_chg_module.lds` for custom module linking. Includes
+`Makefile.json-build` for runtime config-table generation.
+
+**Decision for 2F.3: keep this Makefile in place, write a Kbuild
+shell that delegates to it and a Makefile shell at the parent
+level for external-module flow.** The Bazel `srcs` glob would
+miss the CONFIG-gated obj entries; the existing Makefile is
+ground truth.
+
+### EXPORT-count threshold pre-decision (2F.1)
+
+Pre-deciding to avoid post-hoc rationalization:
+
+- **2F.1 actual = 0**: trend conclusively NOT artifact of any
+  specific subsystem class. Range tightens further (0-5 with
+  near-certain mass at 0). Retire EXPORT_SYMBOL upstream
+  submission cadence in DEFERRED_FOLLOWUPS.
+- **2F.1 actual = 1-2**: trend holds; audio is sui generis
+  (the only gate-heavy class). Range stays 0-10 with mass at 0;
+  audio gets a documented "expected to surface a small handful
+  of EXPORTs" annotation for future wave plans.
+- **2F.1 actual ≥ 3**: recalibration trigger. Range goes back
+  to 5-30 (the original Wave 2 prior). EXPORT_SYMBOL upstream
+  cadence becomes a real Wave 2 close item, not a deferred
+  followup.
+
+This decision is recorded BEFORE the 2F.1 build runs, so the
+calibration update is data-driven not narrative-driven.
+
 ---
 
 ## Sub-wave 2B onwards — heterogeneous module backlog
