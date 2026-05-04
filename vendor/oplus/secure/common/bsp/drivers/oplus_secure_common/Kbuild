@@ -4,8 +4,9 @@
 # CONFIG_OPLUS_SECURE_COMMON (which the existing Makefile passes via
 # KBUILD_OPTIONS — works only if CHIPSET_COMPANY env var is set, which
 # brunch doesn't always do).
+#
+# Single-source module whose .c name matches the .ko name — use obj-m
+# directly without $(MODULE)-objs to avoid circular self-reference
+# (per WIRE_UP_RECIPE Step 2).
 ccflags-y += -DQCOM_PLATFORM -DQCOM_QSEELOG_ENCRYPT -DCONFIG_OPLUS_SECURE_COMMON_MODULE=1
-
-MODULE = oplus_secure_common
-$(MODULE)-objs := oplus_secure_common.o
-obj-m += $(MODULE).o
+obj-m += oplus_secure_common.o
