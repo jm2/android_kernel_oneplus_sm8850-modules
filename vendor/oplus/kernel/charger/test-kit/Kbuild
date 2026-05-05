@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# Single-source module whose .c filename matches the .ko name —
+# use obj-m directly without $(MODULE)-objs to avoid circular
+# self-reference (per WIRE_UP_RECIPE Step 2).
 ccflags-y += -I$(src)
-
-MODULE := test-kit
-$(MODULE)-objs := test-kit.o
-obj-m += $(MODULE).o
+obj-m += test-kit.o
