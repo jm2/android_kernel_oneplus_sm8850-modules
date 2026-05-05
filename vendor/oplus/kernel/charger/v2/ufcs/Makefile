@@ -14,7 +14,7 @@ ufcs_class-y += ufcs_timer.o
 
 ufcs_class-$(CONFIG_OPLUS_UFCS_CLASS_DEBUG) += ufcs_debug.o
 
-ccflags-y += -I$(srctree)/$(src)/include
-ccflags-y += -I$(srctree)/$(src)/include/internal
+ccflags-y += -I$(src)/include
+ccflags-y += -I$(src)/include/internal
 
 obj-$(CONFIG_OPLUS_UFCS_CLASS) += ufcs_class.o
