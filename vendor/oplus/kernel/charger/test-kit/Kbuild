@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-only
+ccflags-y += -I$(src)
+
+MODULE := test-kit
+$(MODULE)-objs := test-kit.o
+obj-m += $(MODULE).o

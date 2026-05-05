@@ -95,11 +95,13 @@ export EXTRA_CFLAGS_DEFINES
 # oplus_cfg_* (sibling charger/config/oplus_cfg).
 KBUILD_EXTRA_SYMBOLS := \
     $(abspath $(CURDIR)/../config/Module.symvers) \
+    $(abspath $(CURDIR)/../test-kit/Module.symvers) \
     $(abspath $(CURDIR)/../../boot/cmdline_parser/Module.symvers) \
     $(abspath $(CURDIR)/../../boot/bootmode/Module.symvers) \
     $(abspath $(CURDIR)/../../boot/oplus_projectinfo/qcom/Module.symvers) \
+    $(abspath $(CURDIR)/../../device_info/device_info/Module.symvers) \
     $(abspath $(CURDIR)/../../device_info/magtransfer/Module.symvers) \
-    $(abspath $(CURDIR)/../../multimedia/feedback/Module.symvers)
+    $(abspath $(CURDIR)/../../dft/Module.symvers)
 export KBUILD_EXTRA_SYMBOLS
 
 KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build

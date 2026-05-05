@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0-only
 ccflags-y += -I$(src)/include
 
-MODULE = oplus_bsp_dft_kernel_fb
-$(MODULE)-objs := common/feedback/kernel_fb.o
-obj-m += $(MODULE).o
+# kernel_fb (existing — added in 2D)
+obj-m += oplus_bsp_dft_kernel_fb.o
+oplus_bsp_dft_kernel_fb-y := common/feedback/kernel_fb.o
+
+# olc (added 2F.3 — charger v2 consumes olc_raise_exception)
+obj-m += oplus_bsp_dft_olc.o
+oplus_bsp_dft_olc-y := \
+    common/olc/olc_main.o \
+    common/olc/olc_debug.o
