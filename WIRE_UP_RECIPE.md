@@ -519,6 +519,56 @@ Wave 2 sub-waves landed in 1–4 iterations.)
 
 ---
 
+## Step 7.9 — Iteration-count escalation as structural-mismatch signal
+
+The 6-row signature in Step 7.8 is best run pre-build, but a
+sub-wave can also escape it (Bazel-portable on the surface,
+structurally coupled in deeper layers). The iteration count is
+the in-flight signal:
+
+**Rule.** If a sub-wave's brunch iteration count reaches **2x
+the previous max** without converging on green, pause the
+tactical-fix loop and explicitly run the Step 7.8 signature
+check. The recurrence-vs-new-class pattern of bugs across
+those iterations is the diagnostic — recurring classes mean
+the recipe is working; new classes per iteration mean
+structural mismatch.
+
+**Threshold sources.** Track the running max iteration count to
+green across Wave 2:
+
+| Sub-wave | Iterations to green | Running max |
+|---|---|---|
+| 2H | 4 | 4 |
+| 2D | 1 | 4 |
+| 2F.1 | 3 | 4 |
+| 2F.2 | 4 | 4 |
+| 2F.3 | (n/a, deferred at 14) | 4 |
+
+So at 2026-05-05 the escalation threshold is **8 iterations**
+(= 2 × 4). When the next sub-wave reaches v8 without a green
+build, the prep agent should pause and run Step 7.8.
+
+**Why not earlier.** A linear "stop at v6" rule would over-trigger
+on legitimately complex but Bazel-portable modules. 2F.2 took 4
+iterations cleanly; some modules will too. The 2x-of-running-max
+rule rises naturally as the project's ceiling rises and stays
+calibrated to actual difficulty.
+
+**What pause means.** Pause = stop the next tactical fix. Do
+NOT mean "abandon"; do mean "characterize before continuing."
+Run the Step 7.8 6-row check. Look at the bug-class pattern
+across iterations: recurrence-heavy = continue; novel-class-per-iter
+= structural mismatch, deferral candidate.
+
+(Surfaced 2026-05-05 in 2F.3 post-mortem. Charger v2's
+structural mismatch was *visible* by iteration 4–5 but the
+decision to stop didn't happen until iteration 14. Earlier
+recognition would have saved ~9 iterations of effort. This
+rule encodes the lesson.)
+
+---
+
 ## Step 8 — Confirm the OEM-kernel-prebuilt fallback still works
 
 Each commit must keep the `BOARD_VENDOR_KERNEL_MODULES` (OEM-prebuilt

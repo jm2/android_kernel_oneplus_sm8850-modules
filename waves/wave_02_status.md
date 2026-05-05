@@ -2351,6 +2351,37 @@ The "0 EXPORTs over N sub-waves" trend applies specifically to
 buffer remains 2. The 9th sub-wave (2F.3) is excluded from the
 trend by category, not by result.
 
+### Active process — required for every future Wave 2+ prep section
+
+The 0-EXPORT prior is a category-scoped property. Every prep
+section from 2E onward MUST include an explicit Bazel-portability
+check before the EXPORT projection. Steps:
+
+1. **Run the 6-row signature check** (WIRE_UP_RECIPE Step 7.8)
+   on the modules in scope. Record yes/no per row.
+2. **Conclude Bazel-portability**: yes (0–2 rows match) →
+   inherits the prior; no (3+ rows match) → projection is
+   "unmeasured by default; wire-up time-boxed; defer to OEM
+   prebuilt if the structural-mismatch signature is confirmed."
+3. **EXPORT projection** — only after the above conclusion is
+   recorded. Bazel-portable modules use the established
+   threshold pattern (0 / 1-2 / 3+); coupled modules use the
+   time-boxed-attempt pattern.
+
+This converts the calibration boundary from passive documentation
+to a process step. Skipping it risks the failure mode where a
+prep agent inherits the prior on a coupled module, projects 0,
+and rediscovers the same structural-mismatch lesson the hard way.
+
+### Doc-hygiene note
+
+When citing the trend in future docs, always use the qualifier
+**"evidence sub-waves"**, not "sub-waves." When 2E lands at 0,
+the line should read "9 evidence sub-waves at 0," not "9 sub-waves
+at 0." The latter implicitly counts 2F.3 as a 0-result rather than
+as unmeasured-by-category. Small framing matter; preserves
+institutional accuracy of the cumulative count.
+
 ---
 
 ## Remaining sub-waves — sequencing pre-decision (2026-05-05)
