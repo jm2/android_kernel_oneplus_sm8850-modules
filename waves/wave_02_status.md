@@ -2406,6 +2406,127 @@ result becomes the surprise.
 
 ---
 
+## Sub-wave 2E prep — qcom_qti (25 modules) (2026-05-05)
+
+### State verification (against tree, not summary)
+
+- modules tree: 0 commits ahead of `github/lineage-23.2` (all
+  pushed)
+- sm8850-common: 5 commits ahead of `jm2/lineage-23.2` (2F.2
+  sextet, 3 charger entries, 1 deferral). All coherent — final
+  state has charger entries commented out.
+- TARGET_KERNEL_EXT_MODULES: 49 active entries; `charger/{config,
+  test-kit,v2}` lines commented out under explanatory note.
+- Sanity brunch (post-deferral): exit 0, all 2F.1+2F.2 modules
+  in `vendor_dlkm/lib/modules/`, charger v2 ships from OEM
+  prebuilt.
+
+### Step 7.8 signature check — N/A for this category
+
+The 6-row signature in WIRE_UP_RECIPE is for **external modules**
+(Bazel ext-module trees translated to TARGET_KERNEL_EXT_MODULES
++ Kbuild + Makefile). 2E modules are **kernel-internal drivers**
+at `kernel/oneplus/sm8850/drivers/{soc,rpmsg,remoteproc,edac,
+crypto,thermal,...}/qcom*` — built directly by the kernel build
+itself when their `CONFIG_*` flag is set in the kernel defconfig.
+
+The 6-row check assumes "Bazel-portable" means "translatable to
+kbuild ext-module flow." Doesn't apply here. The portability
+question for kernel-internal modules is different: **"is the
+CONFIG flag enabled in our kernel defconfig?"**
+
+This is itself a useful institutional finding — Wave 2 has so
+far operated on external modules. 2E is the first sub-wave where
+the source-build path goes through the kernel proper rather than
+the ext-module flow. The "active process step" for 2E is:
+
+1. **Module classification**: For each module, determine source
+   (kernel-built vs OEM-prebuilt-fallback vs external).
+2. **CONFIG verification**: For OEM-prebuilt-fallback modules,
+   identify the upstream `CONFIG_*` flag and confirm the source
+   exists in our kernel tree.
+3. **Defconfig augmentation**: Enable the missing `CONFIG_*=m`
+   in our kernel defconfig fragment.
+4. **Verification**: brunch closeout + exports_superset_check.
+
+### Module classification (all 25 qcom_*)
+
+Done. Source-classification per module:
+
+| Module | Already kernel-built? | Path / Action needed |
+|---|---|---|
+| qcom_edac | ✓ | drivers/edac/qcom_edac.ko |
+| qcom_glink | ✓ | drivers/rpmsg/qcom_glink.ko |
+| qcom_glink_smem | ✓ | drivers/rpmsg/qcom_glink_smem.ko |
+| qcom_pil_info | ✓ | drivers/remoteproc/qcom_pil_info.ko |
+| qcom-pon | ✓ | drivers/power/reset/qcom-pon.ko |
+| qcom_q6v5 | ✓ | drivers/remoteproc/qcom_q6v5.ko |
+| qcom_q6v5_pas | ✓ | drivers/remoteproc/qcom_q6v5_pas.ko |
+| qcom_ramdump | ✓ | drivers/soc/qcom/qcom_ramdump.ko |
+| qcom-rng | ✓ | drivers/crypto/qcom-rng.ko |
+| qcom_smd | ✓ | drivers/rpmsg/qcom_smd.ko |
+| qcom-spmi-temp-alarm | ✓ | drivers/thermal/qcom/qcom-spmi-temp-alarm.ko |
+| qcom_stats | ✓ | drivers/soc/qcom/qcom_stats.ko |
+| qcom_sysmon | ✓ | drivers/remoteproc/qcom_sysmon.ko |
+| qcom_va_minidump | ✓ | drivers/soc/qcom/qcom_va_minidump.ko |
+| qcom-amoled-regulator | ✗ | CONFIG flip needed |
+| qcom_cpuss_sleep_stats_v4 | ✗ | CONFIG flip needed |
+| qcom_dynamic_ramoops | ✗ | CONFIG flip needed |
+| qcom_glink_spss | ✗ | CONFIG flip needed |
+| qcom-hv-haptics | ✗ | CONFIG flip needed |
+| qcom-i2c-pmic | ✗ | CONFIG flip needed |
+| qcom_iommu_debug | ✗ | CONFIG flip needed |
+| qcom_lpm | ✗ | CONFIG flip needed |
+| qcom-spmi-adc5-gen3 | ✗ | CONFIG flip needed |
+| qcom_spss | ✗ | CONFIG flip needed |
+| qcom-vadc-common | ✗ | CONFIG flip needed |
+
+**14 already kernel-source-built. 11 need CONFIG flip.**
+
+### Effort projection
+
+Substantially smaller than prior 2x sub-waves:
+
+- **Verification of the 14 already-built**: run exports_superset_check
+  on the existing build; ~5 min total.
+- **CONFIG flip for the 11 missing**:
+  - Identify each module's `Kconfig` definition (the `CONFIG_*`
+    name): ~30 min total
+  - Confirm source files exist in our kernel tree at the path
+    Kconfig expects: ~15 min
+  - Author defconfig fragment additions: 15 min
+- **Brunch closeout to green**: 1 brunch run if all CONFIGs
+  are flippable cleanly; expect retries only if a CONFIG has
+  unmet Kconfig dependencies in our tree.
+
+Total: 1–2 hours expected, half a day upper bound.
+
+### EXPORT-count threshold pre-decision
+
+Recording before build, per the established pattern:
+
+- **0 EXPORTs**: trend continues at 9 evidence sub-waves.
+  Kernel-internal-driver class is consistent with the
+  Bazel-portable class for the prior.
+- **1–2 EXPORTs**: characterize each surfaced symbol; nm-check
+  per Step 7.5 to determine real consumer impact. Cumulative
+  buffer (≤2) consumed; flag for retirement-criterion
+  re-evaluation.
+- **3+ EXPORTs**: recalibrate. Kernel-internal drivers having a
+  meaningful EXPORT ladder would suggest the prior was
+  over-fit to the ext-module class.
+
+Confidence on 0: HIGH. Kernel-internal qcom drivers are upstream
+code; their EXPORTs are stable and OEM doesn't typically extend
+them. The 14 already-built should be pass-exact; the 11
+CONFIG-flips compile upstream code with known APIs.
+
+### Status
+
+Prep done 2026-05-05. CONFIG-flip work next.
+
+---
+
 ## Sub-wave 2B onwards — heterogeneous module backlog
 
 After the clock cluster lands, Wave 2 moves to the OEM-prebuilt-only
