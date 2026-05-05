@@ -473,6 +473,52 @@ canoeautoconf.h.)
 
 ---
 
+## Step 7.8 — Recognize the OEM-Bazel-environment-coupled module class
+
+A small but real fraction of OEM modules are not Bazel-portable in
+the sense that translating their Bazel rules to kbuild produces a
+buildable result. They depend on properties of OEM's Bazel build
+environment that don't ship with the source tree. Trying to source-
+build these without first replicating the Bazel environment is
+open-ended — each iteration uncovers a new layer of implicit
+dependency.
+
+**Pre-build signature check.** Before committing to a full wire-up
+of a new module, inspect against this 6-row table. If 3+ rows
+match, time-box the wire-up attempt rather than committing
+open-endedly.
+
+| # | Property | Bazel-portable | OEM-Bazel-coupled |
+|---|---|---|---|
+| 1 | Source dir = build dir | yes | no — generated-at-build headers (e.g. JSON-driven `*_cfg.h`, scripts/ic_cfg_parse.py) |
+| 2 | Bazel module name = output `.ko` name | yes | no — `name = "{target}_X"` with `out = "X.ko"` override |
+| 3 | All `local_defines` covered by `OPLUS_ARCH_EXTENDS` (set in canoeautoconf.h) | yes | no — needs additional Bazel-only defines (`OPLUS_FEATURE_CHG_BASIC`, `CONFIG_QTI_BATTERY_CHARGER`, etc.) |
+| 4 | Source uses only sibling-relative includes | yes | no — uses OEM-specific symlinks to non-existent paths (e.g. `kernel_platform/common/drivers/gpio/gpiolib.h`) |
+| 5 | Cross-leaf consumers all source-built or kernel-internal | yes | no — needs additional new ext-modules to satisfy `KBUILD_EXTRA_SYMBOLS` |
+| 6 | Single Kbuild + Makefile suffices | yes | no — needs `Makefile.json-build`-style sub-makefile mechanisms for codegen, custom `.lds`, etc. |
+
+**Disposition for matched modules.** Source-build infrastructure
+goes in the tree (Kbuild + Makefile + any generated-headers wiring)
+so future work can resume from where the attempt stopped, but the
+module is NOT added to `TARGET_KERNEL_EXT_MODULES`. OEM prebuilt
+ships in the meantime via `BOARD_VENDOR_KERNEL_MODULES`. Resume
+the source-build attempt only if a future engineering investment
+in replicating OEM's Bazel environment paths becomes worthwhile
+(upstreaming, security audit, multi-device port).
+
+**Calibration note.** The 0-EXPORT prior over Wave 2 sub-waves
+applies to **Bazel-portable** modules. OEM-Bazel-environment-
+coupled modules don't run the test (build never reaches MODPOST
+cleanly), so they're neither evidence for nor against the prior.
+Don't extend the prior to a new module class without first
+checking the 6-row signature.
+
+(Surfaced 2026-05-05 by 2F.3 charger v2 — 14 brunch iterations
+without convergence; each iteration uncovered a new layer. Other
+Wave 2 sub-waves landed in 1–4 iterations.)
+
+---
+
 ## Step 8 — Confirm the OEM-kernel-prebuilt fallback still works
 
 Each commit must keep the `BOARD_VENDOR_KERNEL_MODULES` (OEM-prebuilt

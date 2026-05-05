@@ -2206,6 +2206,175 @@ Wave 2 closeout (after 2I), not at any single sub-wave's close.
 
 ---
 
+## Sub-wave 2F.3 retrospective (2026-05-05)
+
+### Outcome
+
+**Identified and characterized: OEM-Bazel-environment-coupled
+module class. charger v2 deferred to OEM prebuilt; in-tree
+build infrastructure preserved for future resumption.**
+
+This is NOT a failed wire-up attempt; it's a successful
+identification of a module class the project should expect to
+encounter again. Wave 2's recipe is portable across Bazel-portable
+modules; charger v2 isn't Bazel-portable in this sense.
+
+### What was attempted
+
+14 brunch iterations across charger v2 + sibling producers
+(charger/config, charger/test-kit, dft expansion for olc).
+Build never reached MODPOST cleanly. Each iteration uncovered a
+new bug class. The 14-iteration cost contrasts sharply with prior
+sub-waves (1–4 iterations to green): structural mismatch, not
+iteration-budget problem.
+
+### Why charger v2 is structurally an outlier
+
+Six dimensions in which charger v2 deviates from the
+Bazel-portable pattern that every other Wave 2 module followed
+cleanly:
+
+| Property | Bazel-portable (rest of Wave 2) | charger v2 |
+|---|---|---|
+| Source dir = build dir | yes | NO — generated headers from JSON via scripts/ic_cfg_parse.py |
+| Bazel module name = output `.ko` name | yes | NO — `name = "canoe_oplus_cfg"` with `out = "oplus_cfg.ko"` override |
+| `local_defines` covered by canoeautoconf.h | yes | NO — needs `OPLUS_FEATURE_CHG_BASIC`, `CONFIG_QTI_BATTERY_CHARGER` not surfaced via the autoconf path |
+| Sibling-relative includes only | yes | NO — `test-kit/gpiolib.h`, `pinctrl-msm.h` are symlinks to `kernel_platform/common/...` paths that don't exist in our tree |
+| Cross-leaf consumers source-built | mostly | NO — needs charger/config + test-kit + dft expansion (3 new ext-modules just for charger v2 to link) |
+| Single Kbuild suffices | yes | NO — `Makefile.json-build` mechanism for codegen, custom `oplus_chg_module.lds` linker script |
+
+Charger v2 isn't "harder" than other modules — it's *materially
+dependent* on OEM's Bazel build environment having specific
+properties our environment lacks.
+
+### Disposition
+
+- Source-build infrastructure (Kbuild + Makefile + .gitignore
+  + generated-headers wiring) **kept in tree** at
+  `vendor/oplus/kernel/charger/{v2,config,test-kit}/` so future
+  work can resume from where 2F.3 stopped, not start from
+  scratch.
+- `TARGET_KERNEL_EXT_MODULES` entries **not added** for these
+  three. OEM prebuilt `oplus_chg_v2.ko` ships via
+  `BOARD_VENDOR_KERNEL_MODULES`.
+- `oplus/kernel/dft` Kbuild expansion to include olc **kept**
+  (reusable for any future olc consumer; not charger-v2-specific).
+- All WIRE_UP_RECIPE additions **kept** (Make/C asymmetry
+  documentation, generated-headers warning, single-source
+  matching-name pitfall, OEM-source -Werror, install-path
+  layout, OEM-Bazel-environment-coupled signature). Recipe
+  value from 2F.3 is real even though the wire-up didn't land.
+
+Resume conditions: a future engineering investment in
+replicating OEM's Bazel environment paths becomes worthwhile —
+e.g., upstreaming, security audit, multi-device port. Until
+then, OEM prebuilt is the disposition.
+
+### Calibration update
+
+**EXPORT count for 2F.3: unmeasured.** Build never reached
+MODPOST cleanly. Charger v2 is neither evidence for nor against
+the 0-EXPORT prior. Cumulative count remains **0 over 8
+sub-waves**. Retirement-criterion buffer remains **2**.
+
+**Important calibration boundary**: the 0-EXPORT prior holds
+for Bazel-portable modules. OEM-Bazel-environment-coupled
+modules don't run the test. Don't extend the prior to a new
+module class without first checking the 6-row signature.
+
+### Why this is institutional-knowledge-positive
+
+The 14 iterations weren't wasted:
+
+- WIRE_UP_RECIPE gained 4 new general sections (Step 7.5 nm
+  diagnostic, Step 7.6 Make/C asymmetry, Step 7.7 OEM-source
+  -Werror, Step 7.8 OEM-Bazel-environment-coupled signature).
+- The Make/C asymmetry pattern was confirmed as recurring
+  (2F.1 audio + 2F.3 charger nfg8011b/ufcs_class — different
+  contexts, same mechanism).
+- The single-source self-reference pattern was confirmed as
+  recurring (2H esim, 2F.2 secure_common, 2F.3 oplus_cfg,
+  2F.3 test-kit — 4 instances; recipe well-tested).
+- The OEM-Bazel-environment-coupled module class was identified
+  and characterized for future agents — a stable disposition
+  rather than open-ended retry pressure.
+
+### Iteration history (recorded for retrospective audit)
+
+1. `$(srctree)/$(src)` doubled-path
+2. Build-time-generated header from JSON
+3. `$(M)` relative vs `$(CURDIR)` absolute
+4. Make/C asymmetry — `nfg8011b.h` static stubs (recurrence of 2F.1 class)
+5. Same asymmetry for `ufcs_class.h` — needed `subdir-ccflags-y`
+6. `OPLUS_FEATURE_CHG_BASIC` Bazel `local_define` not mirrored
+7. `oplus_chg_track.h` enum redefinition; -I order issue
+8. `<plat_ufcs/...>` needs -I$(src); -Werror=unterminated-string-init recurrence
+9. `register_hboost_event_notifier` — kernel header gates on missing CONFIG_QTI_BATTERY_CHARGER
+10. 22 unresolved cross-leaf symbols
+11. New ext-module `charger/config` needed
+12. More cross-leaf: register_device_proc, test_kit_*, olc_raise_exception, fb_kevent_send_to_user (path)
+13. test-kit single-source self-reference (recurrence)
+14. **OEM-symlink to non-existent `kernel_platform/common/drivers/gpio/gpiolib.h`** — at this layer the structural mismatch became unambiguous; stopped iterating
+
+### Commits in this sub-wave
+
+Wire-up commits (charger v2 ext-module entries) are preserved in
+git history but the BoardConfigCommon.mk entries that activated
+them are commented out. Specifically:
+- `2a848a92` 2F.3 wire-up (modules: 153 .c files, generated headers)
+- `022be389`, `40205013`, `ee1056b0`, `80772891`, `d6ab7541`,
+  `77aedbf2`, `3675e639`, `9f5d50bb`, `6fd20f09`, `bd5bfaa2`,
+  `04e838c9`, `2eed1373`, `c42d340` — 13 fix commits across
+  the 14 iterations (one was merged-doc-only)
+- This commit reverts the BoardConfigCommon.mk activations only.
+
+---
+
+## Calibration boundary note (post-2F.3)
+
+The "0 EXPORTs over N sub-waves" trend applies specifically to
+**Bazel-portable modules**. Re-enumerating the actual evidence:
+
+| Sub-wave | Bazel-portable? | EXPORT count | Counts toward prior? |
+|---|---|---|---|
+| Phase 4 keyevent_handler | yes | 0 | yes |
+| 2A clocks | yes | 0 | yes |
+| 2A.5 follow-up | yes | 0 | yes |
+| 2C audio (qcom audio-kernel) | yes (2C v3 fix in scope) | 0 | yes |
+| 2H oplus_network | yes | 0 | yes |
+| 2D touch + haptic + fp + fw_update + hbp + synaptics_hbp | yes | 0 | yes |
+| 2F.1 audio extensions | yes | 0 | yes |
+| 2F.2 sensors + magcvr + mm_kevent + secure + sync_fence | yes | 0 | yes |
+| **2F.3 charger v2** | **NO (OEM-Bazel-coupled)** | **unmeasured** | **NO** |
+
+**Cumulative count: 0 over 8 evidence sub-waves.** Retirement
+buffer remains 2. The 9th sub-wave (2F.3) is excluded from the
+trend by category, not by result.
+
+---
+
+## Remaining sub-waves — sequencing pre-decision (2026-05-05)
+
+After 2F.3, four sub-waves remain. Pre-deciding the order now,
+before any prep, to lock in discipline before knowing outcomes.
+
+| Order | Sub-wave | Module count | Rationale |
+|---|---|---|---|
+| 1 | **2E qcom_qti** | ~21 modules | Likely Bazel-portable (qcom-named modules with standard kbuild patterns); good follow-up to confirm 2F.3 was an outlier rather than a class change |
+| 2 | **2I bluetooth** | 4 modules | Small; likely portable; rounds out the smaller-scope sub-waves |
+| 3 | **2G msm graphics/video** | ~11 modules (msm_kgsl, msm-eva, msm_video) | The genuine size-scaling and cross-tree-fan-in test. Save for last so the iteration budget is available if it surfaces issues. If 2G also surfaces structural issues like 2F.3, that's two data points for OEM-Bazel-environment-coupled being a real recurring class. |
+
+EXPORT-count thresholds for each will be pre-decided at the
+start of each sub-wave's prep, following the established 2F.2/2F.3
+pattern.
+
+If 2E and 2I both land at 0 cleanly, that's 10 consecutive
+Bazel-portable sub-waves at 0 EXPORTs. At that point the prior
+is empirically robust enough that 2G's role flips: any non-zero
+result becomes the surprise.
+
+---
+
 ## Sub-wave 2B onwards — heterogeneous module backlog
 
 After the clock cluster lands, Wave 2 moves to the OEM-prebuilt-only
