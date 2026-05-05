@@ -43,5 +43,24 @@ KBUILD_OPTIONS := \
 
 KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
 M ?= $(shell pwd)
-modules modules_install clean:
+
+# OEM build flow generates 3 headers from JSON config files via
+# scripts/ic_cfg_parse.py. Their stock Makefile.json-build assumes
+# in-tree paths under drivers/power/oplus/v2 — wrong for our
+# external-module build. Pre-generate the headers in $(M) before
+# invoking kbuild; kbuild's -I$(src) finds them naturally.
+GENERATED_HEADERS := \
+    $(M)/oplus_chg_ic_cfg.h \
+    $(M)/oplus_chg_ic_cfg_str.h \
+    $(M)/oplus_chg_ic_auto_debug.h
+
+generate-headers:
+	@python3 $(M)/scripts/ic_cfg_parse.py -hd $(M)/oplus_chg_ic_cfg.h     $(M)/config/oplus_chg_ic.json
+	@python3 $(M)/scripts/ic_cfg_parse.py -s  $(M)/oplus_chg_ic_cfg_str.h $(M)/config/oplus_chg_ic.json
+	@python3 $(M)/scripts/ic_cfg_parse.py -df $(M)/oplus_chg_ic_auto_debug.h $(M)/config/oplus_chg_ic.json
+
+modules: generate-headers
+	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(KBUILD_OPTIONS) $(@)
+
+modules_install clean:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(KBUILD_OPTIONS) $(@)

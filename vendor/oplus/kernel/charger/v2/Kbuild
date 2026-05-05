@@ -6,6 +6,7 @@ endif
 
 obj-y += ufcs/
 
+ccflags-y += -I$(src)
 ccflags-y += -I$(src)/include
 ccflags-y += -I$(src)/../gauge_i2c_rst
 ccflags-y += -I$(src)/../test-kit
@@ -216,4 +217,3 @@ KBUILD_LDS_MODULE_ATTACH = oplus_chg_module.lds
 
 obj-$(CONFIG_OPLUS_CHG_V2) += oplus_chg_v2.o
 
-include $(src)/Makefile.json-build
