@@ -6,7 +6,10 @@ endif
 
 obj-y += ufcs/
 
-ccflags-y += -I$(src)
+# Generated headers (oplus_chg_ic_cfg{,_str,_auto_debug}.h) land in
+# include/ — NOT $(src) root — to avoid `-I$(src)` which would make
+# <../voocphy/oplus_voocphy.h> from chglib.c resolve to the SIBLING
+# v1 charger/voocphy/ tree (and pull in conflicting V1 enum defs).
 ccflags-y += -I$(src)/include
 # Mirror of KBUILD_OPTIONS as C preprocessor defines (set by sibling
 # Makefile shell). Required because source #ifdef CONFIG_OPLUS_*

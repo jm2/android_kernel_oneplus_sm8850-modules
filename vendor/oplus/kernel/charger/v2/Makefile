@@ -100,9 +100,9 @@ GENERATED_HEADERS := \
     $(M)/oplus_chg_ic_auto_debug.h
 
 generate-headers:
-	@python3 $(CURDIR)/scripts/ic_cfg_parse.py -hd $(CURDIR)/oplus_chg_ic_cfg.h        $(CURDIR)/config/oplus_chg_ic.json
-	@python3 $(CURDIR)/scripts/ic_cfg_parse.py -s  $(CURDIR)/oplus_chg_ic_cfg_str.h    $(CURDIR)/config/oplus_chg_ic.json
-	@python3 $(CURDIR)/scripts/ic_cfg_parse.py -df $(CURDIR)/oplus_chg_ic_auto_debug.h $(CURDIR)/config/oplus_chg_ic.json
+	@python3 $(CURDIR)/scripts/ic_cfg_parse.py -hd $(CURDIR)/include/oplus_chg_ic_cfg.h        $(CURDIR)/config/oplus_chg_ic.json
+	@python3 $(CURDIR)/scripts/ic_cfg_parse.py -s  $(CURDIR)/include/oplus_chg_ic_cfg_str.h    $(CURDIR)/config/oplus_chg_ic.json
+	@python3 $(CURDIR)/scripts/ic_cfg_parse.py -df $(CURDIR)/include/oplus_chg_ic_auto_debug.h $(CURDIR)/config/oplus_chg_ic.json
 
 modules: generate-headers
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(KBUILD_OPTIONS) $(@)

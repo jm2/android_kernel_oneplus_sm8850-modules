@@ -1,7 +1,7 @@
 # Generated at build time by scripts/ic_cfg_parse.py from config/*.json.
 # See Makefile's generate-headers target.
-oplus_chg_ic_cfg.h
-oplus_chg_ic_cfg_str.h
-oplus_chg_ic_auto_debug.h
-oplus_chg_ic_cfg.json
-oplus_chg_ic_cfg.md
+include/oplus_chg_ic_cfg.h
+include/oplus_chg_ic_cfg_str.h
+include/oplus_chg_ic_auto_debug.h
+include/oplus_chg_ic_cfg.json
+include/oplus_chg_ic_cfg.md
