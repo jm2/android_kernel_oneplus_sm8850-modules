@@ -7,10 +7,17 @@ endif
 obj-y += ufcs/
 
 # Generated headers (oplus_chg_ic_cfg{,_str,_auto_debug}.h) land in
-# include/ — NOT $(src) root — to avoid `-I$(src)` which would make
-# <../voocphy/oplus_voocphy.h> from chglib.c resolve to the SIBLING
-# v1 charger/voocphy/ tree (and pull in conflicting V1 enum defs).
+# include/ so `-I$(src)/include` finds them.
+# ORDER MATTERS: -I$(src)/include FIRST so <../voocphy/...> from
+# chglib.c resolves via v2/include/../voocphy = v2/voocphy (V2),
+# not via -I$(src) → v2/../voocphy = charger/voocphy (V1, wrong).
+# -I$(src) is then needed for <plat_ufcs/plat_ufcs_notify.h> et al.
 ccflags-y += -I$(src)/include
+ccflags-y += -I$(src)
+# Suppress -Werror=unterminated-string-initialization (clang newer
+# than OEM); same class as 2F.2 magcvr — i2c_device_id::name fields
+# exactly 20 chars eliding null terminator.
+ccflags-y += -Wno-error=unterminated-string-initialization
 # Mirror of KBUILD_OPTIONS as C preprocessor defines (set by sibling
 # Makefile shell). Required because source #ifdef CONFIG_OPLUS_*
 # blocks need C-side defines, not just Make-side variables.
