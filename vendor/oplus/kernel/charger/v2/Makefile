@@ -87,6 +87,21 @@ EXTRA_CFLAGS_DEFINES := \
     -DCONFIG_QTI_BATTERY_CHARGER
 export EXTRA_CFLAGS_DEFINES
 
+# Cross-leaf symvers — modpost needs producers' Module.symvers
+# for: get_boot_mode/get_PCB_Version (cmdline_parser), get_boot_mode
+# also (bootmode), get_eng_version/get_Operator_Version/get_project
+# (boot_projectinfo), magcvr_* (magtransfer/oplus_magcvr_notify),
+# fb_kevent_send_to_user (multimedia/feedback/oplus_mm_kevent_fb),
+# oplus_cfg_* (sibling charger/config/oplus_cfg).
+KBUILD_EXTRA_SYMBOLS := \
+    $(abspath $(CURDIR)/../config/Module.symvers) \
+    $(abspath $(CURDIR)/../../boot/cmdline_parser/Module.symvers) \
+    $(abspath $(CURDIR)/../../boot/bootmode/Module.symvers) \
+    $(abspath $(CURDIR)/../../boot/oplus_projectinfo/qcom/Module.symvers) \
+    $(abspath $(CURDIR)/../../device_info/magtransfer/Module.symvers) \
+    $(abspath $(CURDIR)/../../multimedia/feedback/Module.symvers)
+export KBUILD_EXTRA_SYMBOLS
+
 KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
 M ?= $(shell pwd)
 
