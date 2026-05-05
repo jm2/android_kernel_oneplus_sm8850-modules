@@ -519,6 +519,101 @@ Wave 2 sub-waves landed in 1–4 iterations.)
 
 ---
 
+## Step 7.8a — OEM-build-system-coupled module classes (meta)
+
+Wave 2 has identified two distinct module classes where OEM has
+build-system infrastructure our tree lacks. Both share the
+meta-pattern "OEM-build-system-coupled," but they manifest
+differently and have different remediation paths. Future
+sub-waves should expect to identify additional sub-classes as
+different module trees expose different OEM-specific build
+mechanisms.
+
+| Sub-class | Where | Symptom | Remediation |
+|---|---|---|---|
+| OEM-Bazel-environment-coupled (Step 7.8 above) | Ext-module trees translated to TARGET_KERNEL_EXT_MODULES | 6+ Bazel-only build assumptions; iteration count exceeds 2× running max without convergence | Defer to OEM prebuilt; preserve in-tree build infrastructure for future resumption |
+| OEM-techpack-overlay-coupled (Step 7.8b below) | Kernel-internal drivers under `kernel/oneplus/sm8850/drivers/...` | Source file + Kconfig present, but Makefile in same directory has no `obj-$(CONFIG_X)` entry | Per-module triage: patch Makefile for runtime-active modules; defer OEM-internal/diagnostic-only modules to OEM prebuilt |
+
+When a future module is identified as OEM-build-system-coupled,
+classify it into the relevant sub-class. The disposition workflow
+differs by sub-class. If a new manifestation emerges that doesn't
+fit either, document it as a third sub-class.
+
+---
+
+## Step 7.8b — OEM-techpack-overlay-coupled module class
+
+Kernel-internal drivers (under `kernel/oneplus/sm8850/drivers/...`,
+not external modules) where the source file exists, the Kconfig
+entry exists, but the Makefile in the same directory has **no
+`obj-$(CONFIG_X) += foo.o`** entry. Setting `CONFIG_X=m` alone
+won't compile the module — the source isn't wired into the
+kernel's build graph at the Makefile level. OEM ships these via
+Qualcomm's tech-package overlay (an out-of-tree patch system that
+adds vendor-specific obj entries to in-tree Makefiles); our tree
+lacks the overlay patches.
+
+**Symptom signature.**
+
+```bash
+# 1. Source file present?
+ls drivers/<subsystem>/qcom-foo.c  # found
+
+# 2. Kconfig entry present?
+grep "config QCOM_FOO" drivers/<subsystem>/Kconfig  # found
+
+# 3. Makefile obj-$() entry present?
+grep "qcom-foo\.o" drivers/<subsystem>/Makefile  # NOT FOUND ← signature
+```
+
+If all three are needed but the third is missing, you're in this
+class.
+
+**Disposition framework.**
+
+Per-module triage by runtime role:
+
+- **Secure-boot or measured-boot path** (e.g., spss/q6v5
+  secure-side processor) → patch Makefile to add the obj-$()
+  entry. Source is upstream; the patch is a 1-line addition.
+- **Active runtime hardware functionality** (regulators, ADCs,
+  haptics, PMIC bus, low-power management) → patch. These do
+  meaningful work on canoe.
+- **Diagnostic / debug only** (sleep stats, ramoops dynamic
+  config, iommu debug) → defer to OEM prebuilt. They're
+  already shipping; source-build adds little value.
+- **OEM-internal vendor extension with no upstream equivalent**
+  → defer. We couldn't upstream the Makefile patch anyway.
+
+**Depends-on check (also required).**
+
+Even after Makefile patch, the build will fail if the CONFIG has
+unmet Kconfig dependencies. Always grep `Kconfig` for the
+`depends on` line and confirm each dependency is satisfiable in
+our tree:
+
+```bash
+grep -A5 "config QCOM_FOO" drivers/<subsystem>/Kconfig | grep "depends on"
+```
+
+The Makefile patch and the depends-on check are independent;
+both need to clear before brunch.
+
+**Maintenance cost.**
+
+Each Makefile patch is small but compounds across kernel rebases.
+For each AOSP/Qualcomm kernel update, every patched obj-$()
+entry needs to either land cleanly (if the upstream Makefile
+didn't change) or be re-applied with conflict resolution.
+Across multiple rebases this is real maintenance burden — factor
+into the patch-vs-defer decision.
+
+(Surfaced 2026-05-05 in 2E qcom_qti pre-flight: 11 of 25 modules
+have source + Kconfig but no Makefile obj-$() entry. OEM ships
+via tech-package overlay; our tree lacks it.)
+
+---
+
 ## Step 7.9 — Iteration-count escalation as structural-mismatch signal
 
 The 6-row signature in Step 7.8 is best run pre-build, but a

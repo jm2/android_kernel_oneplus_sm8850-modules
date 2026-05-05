@@ -2601,17 +2601,99 @@ supporting other devices on the same kernel) cleaner — each
 device's config additions are self-contained in their own
 fragment.
 
+### Pre-flight (b) — depends-on grep COMPLETED with disposition table
+
+Splitting the 11 by Kconfig/Makefile presence:
+
+| Module | Kconfig? | Depends on | Runtime role | Disposition |
+|---|---|---|---|---|
+| qcom_glink_spss | ✓ found (`RPMSG_QCOM_GLINK_SPSS`) | MAILBOX, QCOM_SMEM | Secure-side processor link | **Patch (Makefile only)** |
+| qcom_lpm | ✓ found (`QCOM_LPM_MONITOR`) | DEBUG_FS, QCOM_RPROC_COMMON, QCOM_QMI_HELPERS | Low-power management (runtime-active) | **Patch (Makefile only)** |
+| qcom_spss | ✓ found (`QCOM_SPSS`) | OF, ARCH_QCOM, QCOM_SMEM | Secure-side processor loading | **Patch (Makefile only)** |
+| qcom-vadc-common | ✓ found (`QCOM_VADC_COMMON`) | MFD_PM8XXX | Voltage ADC reads | **Patch (Makefile only)** |
+| qcom_cpuss_sleep_stats_v4 | ✓ found (`QCOM_CPUSS_SLEEP_STATS_V4`) | DEBUG_FS | Diagnostic | **Defer** |
+| qcom_dynamic_ramoops | ✓ found (`QCOM_DYNAMIC_RAMOOPS`) | ARCH_QCOM, PSTORE_RAM | Debug ramoops | **Defer** |
+| qcom-amoled-regulator | ✗ neither | — | Display backlight (active) | **Patch (Kconfig+Makefile)** |
+| qcom-hv-haptics | ✗ neither | — | Haptics hardware (active) | **Patch (Kconfig+Makefile)** |
+| qcom-i2c-pmic | ✗ neither | — | PMIC bus (foundational) | **Patch (Kconfig+Makefile)** |
+| qcom-spmi-adc5-gen3 | ✗ neither | — | ADC (runtime-active) | **Patch (Kconfig+Makefile)** |
+| qcom_iommu_debug | ✗ neither | — | Diagnostic | **Defer** |
+
+**Summary**: 8 patch (4 Makefile-only, 4 Kconfig+Makefile),
+3 defer (all diagnostic-only).
+
+### Disposition pre-decision (committed before per-module work)
+
+Per the WIRE_UP_RECIPE Step 7.8b triage framework:
+
+- **4 Makefile-only patches**: `qcom_glink_spss`, `qcom_lpm`,
+  `qcom_spss`, `qcom-vadc-common`. Single-line addition each
+  to the relevant kernel Makefile (`drivers/rpmsg/`,
+  `drivers/soc/qcom/`, `drivers/remoteproc/`,
+  `drivers/iio/adc/`). Plus `wave_2e_qcom_qti.config` flip for
+  each CONFIG. Lowest cost; ~30 min each = 2 hours.
+
+- **4 Kconfig + Makefile patches**: `qcom-amoled-regulator`,
+  `qcom-hv-haptics`, `qcom-i2c-pmic`, `qcom-spmi-adc5-gen3`.
+  Author a Kconfig entry following the pattern of sibling
+  drivers (the OEM-overlay patch reference is unavailable to
+  us; we'll have to derive `depends on` from header includes
+  in the .c source). Higher cost AND higher rebase-maintenance
+  burden. ~60 min each = 4 hours. Skipping these is the
+  obvious cost-cutting move if the work needs to fit a tight
+  budget.
+
+- **3 defer to OEM prebuilt**: `qcom_cpuss_sleep_stats_v4`,
+  `qcom_dynamic_ramoops`, `qcom_iommu_debug`. All
+  diagnostic-only; OEM prebuilt continues to ship via
+  `BOARD_VENDOR_KERNEL_MODULES`. Cost: zero (it's already
+  shipping).
+
+**Order**: 4 Makefile-only patches first (cheap, validates the
+class signature), then re-evaluate before tackling 4 Kconfig+Makefile.
+If the first batch is clean, second batch is feasible. If first
+batch surfaces unexpected issues (Kconfig dependency chains we
+missed, Makefile patch interactions), defer the Kconfig+Makefile
+batch and document.
+
+### EXPORT-count framing — split by sub-class
+
+When the retrospective lands, decompose:
+
+- **14 already-built kernel-internal modules**: 0 EXPORTs
+  expected (verification only). These count as data points
+  for "kernel-internal CONFIG-flip class."
+- **N patched OEM-techpack-overlay-coupled modules**: 0 EXPORTs
+  expected (compilation + verification). These start the
+  trend line for the "OEM-techpack-overlay-coupled patched"
+  sub-sub-class.
+- **3 deferred modules**: not in 2E's evidence; they ship from
+  OEM prebuilt.
+
+Same data, more accurate decomposition. Doc-hygiene: when 2E
+lands clean, the cumulative line should read "0 EXPORTs across
+8 ext-module sub-waves + 14 kernel-internal modules + N
+techpack-overlay-coupled patches = 22+N total evidence data
+points across multiple classes." NOT "9 sub-waves at 0."
+
 ### Status
 
-Prep done 2026-05-05. Pre-flight findings:
-- 14 modules verified shipped at correct vermagic (no work).
-- 11 modules need kernel-Makefile obj-$() patches, NOT just
-  CONFIG flips. Materially harder than projected; disposition
-  TBD per per-module triage.
+Prep done 2026-05-05. Disposition pre-decided:
+- 4 Makefile-only patches first
+- Re-evaluate before 4 Kconfig+Makefile patches
+- 3 defers stand
 
-The "1-2 hour effort projection" from earlier prep no longer
-applies. Revised projection: **2-6 hours** for the 11, depending
-on which dispositions are taken (patch all, defer all, or hybrid).
+Revised effort projection: **2–6 hours** depending on Kconfig+Makefile
+batch outcome. Lower bound = first 4 patches + 3 defers; upper
+bound = all 8 patches.
+
+### 2G prep checklist note
+
+When 2G prep starts, run BOTH the 6-row ext-module signature
+check (Step 7.8) AND the OEM-techpack-overlay-coupled check
+(Step 7.8b — Makefile obj-$() entries for kernel-internal
+drivers). msm_kgsl/msm-eva/msm_video might be ext-module flow
+or kernel-internal flow — check both paths before classifying.
 
 ---
 
