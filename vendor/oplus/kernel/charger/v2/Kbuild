@@ -11,7 +11,10 @@ ccflags-y += -I$(src)/include
 # Mirror of KBUILD_OPTIONS as C preprocessor defines (set by sibling
 # Makefile shell). Required because source #ifdef CONFIG_OPLUS_*
 # blocks need C-side defines, not just Make-side variables.
-ccflags-y += $(EXTRA_CFLAGS_DEFINES)
+# Use subdir-ccflags-y so the defines propagate to ufcs/, hal/, etc.
+# subdirs (without this, ufcs_class.h's static-inline stubs activate
+# because ufcs/ doesn't see CONFIG_OPLUS_UFCS_CLASS as a #define).
+subdir-ccflags-y += $(EXTRA_CFLAGS_DEFINES)
 ccflags-y += -I$(src)/../gauge_i2c_rst
 ccflags-y += -I$(src)/../test-kit
 ccflags-y += -I$(src)/../debug-kit
