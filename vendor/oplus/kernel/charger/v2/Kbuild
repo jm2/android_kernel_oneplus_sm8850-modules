@@ -8,6 +8,10 @@ obj-y += ufcs/
 
 ccflags-y += -I$(src)
 ccflags-y += -I$(src)/include
+# Mirror of KBUILD_OPTIONS as C preprocessor defines (set by sibling
+# Makefile shell). Required because source #ifdef CONFIG_OPLUS_*
+# blocks need C-side defines, not just Make-side variables.
+ccflags-y += $(EXTRA_CFLAGS_DEFINES)
 ccflags-y += -I$(src)/../gauge_i2c_rst
 ccflags-y += -I$(src)/../test-kit
 ccflags-y += -I$(src)/../debug-kit
