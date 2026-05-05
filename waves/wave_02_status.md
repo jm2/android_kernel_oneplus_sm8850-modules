@@ -2503,27 +2503,115 @@ Total: 1–2 hours expected, half a day upper bound.
 
 ### EXPORT-count threshold pre-decision
 
-Recording before build, per the established pattern:
+**Calibration framing correction**: 2E starts a NEW trend line for
+the kernel-internal CONFIG-flip class. The 8 prior sub-waves'
+"0 EXPORTs" prior is a property of the **ext-module class**;
+extending it to a kernel-internal class without separate evidence
+is the same category-extension failure mode the calibration
+boundary was added to prevent.
 
-- **0 EXPORTs**: trend continues at 9 evidence sub-waves.
-  Kernel-internal-driver class is consistent with the
-  Bazel-portable class for the prior.
+Recording before build, with class-aware framing:
+
+- **0 EXPORTs**: 2E is data point #1 for the kernel-internal class.
+  Future kernel-internal sub-waves inherit from this; future
+  ext-module sub-waves continue inheriting from the 8-sub-wave
+  ext-module prior.
 - **1–2 EXPORTs**: characterize each surfaced symbol; nm-check
   per Step 7.5 to determine real consumer impact. Cumulative
-  buffer (≤2) consumed; flag for retirement-criterion
-  re-evaluation.
+  count for retirement-criterion purposes is project-wide so
+  this consumes part of the ≤2 buffer.
 - **3+ EXPORTs**: recalibrate. Kernel-internal drivers having a
-  meaningful EXPORT ladder would suggest the prior was
-  over-fit to the ext-module class.
+  meaningful EXPORT ladder would suggest qcom-internal drivers
+  surface upstream-divergence in canoe's BSP that ext-modules
+  don't.
 
 Confidence on 0: HIGH. Kernel-internal qcom drivers are upstream
 code; their EXPORTs are stable and OEM doesn't typically extend
-them. The 14 already-built should be pass-exact; the 11
-CONFIG-flips compile upstream code with known APIs.
+them. But high-confidence is not "extends the prior" — it's
+"likely starts the new trend at 0."
+
+**Doc hygiene**: when 2E lands at 0, the cumulative count line
+should read **"0 EXPORTs across 8 ext-module sub-waves + 1
+kernel-internal sub-wave = 9 total evidence data points across
+2 classes."** NOT "9 sub-waves at 0." The class qualifier matters.
+
+### Pre-flight verifications (active process)
+
+**(a) Vermagic check — 14 ✓ already-built modules.** Done.
+All 14 present in current vendor_dlkm at vermagic
+`6.12.23-4k-g59bd74c45df9` (matches kernel build). No "kernel
+built but not shipped" surprises. These 14 require only
+exports_superset_check verification post-brunch; no wire-up.
+
+**(b) Kconfig depends-on grep — 11 ✗ modules.** PARTIAL —
+surfaced a more interesting finding:
+
+Of the 11 OEM-prebuilt modules, source files exist in our kernel
+tree (e.g., `drivers/regulator/qcom-amoled-regulator.c`,
+`drivers/rpmsg/qcom_glink_spss.c`, `drivers/iio/adc/qcom-spmi-adc5-gen3.c`),
+but the kernel Makefiles (`drivers/regulator/Makefile`, etc.)
+**do NOT have `obj-$(CONFIG_X) += foo.o` entries** for them. So
+even with `CONFIG_X=m` set, the kernel build wouldn't compile
+them — the source isn't wired into the build graph at the
+Makefile level.
+
+This is structurally different from the simple-CONFIG-flip case
+I'd projected. The OEM ships these as prebuilts via their
+**tech-package overlay** (a Qualcomm-specific build mechanism
+that adds vendor-specific obj entries to in-tree Makefiles via
+overlay patches). Our tree lacks those overlay patches.
+
+Possible dispositions:
+- **Patch the kernel Makefiles** to add the missing obj-$() lines.
+  This is upstream-divergent but localized; we'd need to maintain
+  the overlay across kernel updates. Each of the 11 needs source
+  + Makefile entry + Kconfig dependency check.
+- **Defer to OEM prebuilt** for the 11 (analogous to 2F.3
+  charger v2). 14 of 25 already source-built; ship the other 11
+  as OEM prebuilts.
+- **Hybrid**: triage the 11 by which are most valuable to source-
+  build (e.g., security-relevant ones like qcom-rng-related vs
+  diagnostic ones like qcom_iommu_debug). Patch only those.
+
+Surface in the wire-up retrospective along with the per-module
+`depends on` data once it's collected.
+
+**(c) Module count reconciliation: 25-vs-21.** Original wave
+plan estimated 21 qcom_qti modules. Current modules.load has
+25. The 4-module delta is from natural drift in modules.load
+since the plan was authored (Wave 2 has been running ~3 days;
+the plan was written ~5 days ago). 25 is the authoritative
+current scope; 21 was an estimate. No action needed beyond
+recording the reconciliation here.
+
+### Defconfig fragment location pre-decision
+
+Recommend creating **`arch/arm64/configs/wave_2e_qcom_qti.config`**
+in the kernel tree. Per-sub-wave fragments keep the audit trail
+clean and don't conflict with `lineage_genksyms_workaround.config`
+(Phase A purpose) or the base defconfig.
+
+Wire it into the kernel build via the existing fragment-merge
+mechanism (sm8850's defconfig fragment system already merges
+`canoe_perf.config`; adding `wave_2e_qcom_qti.config` follows the
+same pattern).
+
+Per-sub-wave fragments also make Wave 3+ work (potentially
+supporting other devices on the same kernel) cleaner — each
+device's config additions are self-contained in their own
+fragment.
 
 ### Status
 
-Prep done 2026-05-05. CONFIG-flip work next.
+Prep done 2026-05-05. Pre-flight findings:
+- 14 modules verified shipped at correct vermagic (no work).
+- 11 modules need kernel-Makefile obj-$() patches, NOT just
+  CONFIG flips. Materially harder than projected; disposition
+  TBD per per-module triage.
+
+The "1-2 hour effort projection" from earlier prep no longer
+applies. Revised projection: **2-6 hours** for the 11, depending
+on which dispositions are taken (patch all, defer all, or hybrid).
 
 ---
 
