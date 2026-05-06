@@ -2697,6 +2697,132 @@ or kernel-internal flow — check both paths before classifying.
 
 ---
 
+## Sub-wave 2E batch 1 retrospective (2026-05-05/06)
+
+### Effective scope: 2 modules (out of 4 planned Makefile-only)
+
+| Module | Source path | Outcome |
+|---|---|---|
+| `qcom_glink_spss` | `drivers/rpmsg/qcom_glink_spss.c` | **pass-exact 2/2**, description match |
+| `qcom_spss` | `drivers/remoteproc/qcom_spss.c` | **pass-exact 2/2**, description match |
+| `qcom_lpm` | `drivers/cpuidle/governors/qcom-lpm.c` | **DEFERRED** (name-collision-pass-exact, see below) |
+| `qcom-vadc-common` | `drivers/iio/adc/qcom-vadc-common.c` | **DEFERRED** (hidden tristate, see prep) |
+
+Defconfig fragment landed: `arch/arm64/configs/wave_2e_qcom_qti.config`
+with two active flips and explanatory comments on the two
+deferrals. Wired via `TARGET_KERNEL_CONFIG` in
+`device/oneplus/sm8850-common/BoardConfigCommon.mk`.
+
+Makefile patches (kept):
+- `drivers/rpmsg/Makefile`: `obj-$(CONFIG_RPMSG_QCOM_GLINK_SPSS) += qcom_glink_spss.o`
+- `drivers/remoteproc/Makefile`: `obj-$(CONFIG_QCOM_SPSS) += qcom_spss.o`
+
+Makefile patch reverted: `drivers/soc/qcom/Makefile` qcom_lpm entry
+(commit `c6c8c60a43a3`) — built the wrong source.
+
+### Batch-1-as-2-modules vs batch-1-as-4 — what surfaced
+
+Pre-flight inspection promised 4 Makefile-only patches. Two of
+those four surfaced edge cases on first-touch and migrated into
+the Kconfig+Makefile sub-class:
+
+1. **`qcom-vadc-common` hidden tristate**: Kconfig has no prompt
+   string; the symbol is `select`'d by drivers we don't enable.
+   `MFD_PM8XXX` (the obvious selector) `depends on ARM || HEXAGON`;
+   we're ARM64. Cannot enable the symbol via fragment alone —
+   needs Kconfig surgery (add a prompt OR add `select` from a
+   driver we control). Caught at prep time.
+
+2. **`qcom_lpm` wrong-source name collision**: Caught at brunch v1
+   verification time. Initial wire-up patched
+   `drivers/soc/qcom/Makefile` to build `qcom_lpm_monitor.c` (a
+   debug "LPM monitor"). OEM's `qcom_lpm.ko` is actually the
+   cpuidle governor: `drivers/cpuidle/governors/qcom-lpm.c` +
+   `qcom-cluster-lpm.c` + `qcom-lpm-sysfs.c`, all gated on
+   `CONFIG_SCHED_WALT`. Both produce a `qcom_lpm.ko` with 0
+   exports → `exports_superset_check` reported pass-exact 0/0
+   FALSELY. Detection signal was modinfo description mismatch
+   ("QTI cpuidle LPM governor" vs nothing/different) and size
+   ratio (28KB vs 89KB). Resolution: revert the Makefile
+   change, defer to Kconfig+Makefile batch (multi-source rule
+   + new Kconfig stanza + SCHED_WALT dep gate).
+
+**Trend implication**: pre-flight inspection of "this is a
+single-source obj-$() patch" is necessary but not sufficient
+for the Makefile-only sub-class. Even a single-source patch
+can be the WRONG single source if the OEM .ko name doesn't
+encode the source path. **Modinfo description match is the
+authoritative wrong-source check** — added as mandatory
+verification in WIRE_UP_RECIPE Step 7.8b (commit `0b37214`).
+
+### Iteration count
+
+- v1: 1 brunch (caught qcom_lpm name collision via modinfo;
+  exports_superset_check passed false-positively)
+- v2: 1 brunch (clean after revert)
+
+Total: 2 brunches for batch 1. Within the per-batch iteration
+budget; no Step 7.9 (~2× running max → structural-mismatch
+check) trigger fired. The wrong-source detection lengthened
+batch 1 by one brunch but produced a recipe artifact (modinfo
+match check) that closes the false-positive class for future
+sub-waves.
+
+### Cumulative-evidence line update
+
+Per the prep doc's "split by sub-class" framing, the line now
+reads:
+
+> **0 EXPORTs across 8 ext-module sub-waves + 14 kernel-internal
+> modules (already CONFIG=y) + 2 OEM-techpack-overlay-coupled
+> patched modules = 24 total evidence data points across 3
+> classes.**
+
+The "patched" sub-sub-class trend line starts at n=2, both
+clean. Insufficient to claim the class is no-iteration cheap;
+sufficient to confirm the 6-row OEM-techpack-overlay-coupled
+signature in Step 7.8b is correct on first touch when the
+modinfo-match check is applied pre-build (catches qcom_lpm-style
+collisions at recipe time, not brunch time).
+
+### Disposition for batch 2 (Kconfig+Makefile)
+
+Pre-flight inspection moved 2 of the 4 originally-Makefile-only
+modules INTO the Kconfig+Makefile batch (qcom-vadc-common,
+qcom_lpm). Original 4 Kconfig+Makefile candidates
+(amoled-regulator, hv-haptics, i2c-pmic, spmi-adc5-gen3) plus
+these 2 transferred = **6 candidates** for batch 2.
+
+Per the prep-time order pre-decision: re-evaluate before
+tackling. Gate decision now:
+- **Proceed to batch 2**: surfaces signature evidence for the
+  Kconfig+Makefile sub-sub-class on a real n=6, not n=4
+- **Defer batch 2 to a later wave window**: 2I bluetooth (4
+  modules, ext-module flow) is the next pre-decided sub-wave;
+  finishing 2E batch 2 first keeps the 2E thread coherent
+
+Recommend **defer batch 2 and move to 2I**. Reasoning:
+- batch 1 already produced the institutional artifact (modinfo
+  description match) that was the highest-value finding
+- the 6 Kconfig+Makefile candidates have higher per-module cost
+  (Kconfig surgery + Makefile + dep checks) and the
+  iteration-budget risk is asymmetric — one Kconfig dependency
+  chain we missed could cascade into a 2F.3-shaped iteration
+  budget overrun
+- 2I is independent (ext-module class, well-trodden 6-row
+  signature) and gives a fresh sub-wave on a different class
+
+If user wants batch 2 first, that's also fine — the candidates
+are pre-identified and the order doesn't affect correctness,
+only schedule.
+
+### Status
+
+2E batch 1 effective scope = **2 modules clean**. Batch 2 (6
+modules) deferred pending sequencing decision.
+
+---
+
 ## Sub-wave 2B onwards — heterogeneous module backlog
 
 After the clock cluster lands, Wave 2 moves to the OEM-prebuilt-only
