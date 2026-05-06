@@ -608,9 +608,39 @@ didn't change) or be re-applied with conflict resolution.
 Across multiple rebases this is real maintenance burden — factor
 into the patch-vs-defer decision.
 
+**Mandatory verification: modinfo description match.**
+
+When wiring up a kernel-internal driver, MULTIPLE source files in
+different parts of the tree may produce a .ko with the same name.
+`obj-$(CONFIG_X) += foo.o` from `drivers/A/Makefile` and `obj-$(CONFIG_Y)
++= foo.o` from `drivers/B/Makefile` both produce `foo.ko`; whichever
+was wired up wins, and exports_superset_check at 0/0 EXPORTs will
+pass either way (name-collision-pass-exact failure mode).
+
+Before declaring a kernel-internal source-build complete, **always**
+verify:
+
+```bash
+# Our build's description should match OEM's
+diff <(modinfo our-build/foo.ko 2>/dev/null | grep '^description:') \
+     <(modinfo OEM-prebuilt/foo.ko 2>/dev/null | grep '^description:')
+```
+
+If the descriptions don't match, the wire-up targeted the wrong
+source. Defer + re-investigate; don't ship.
+
 (Surfaced 2026-05-05 in 2E qcom_qti pre-flight: 11 of 25 modules
 have source + Kconfig but no Makefile obj-$() entry. OEM ships
-via tech-package overlay; our tree lacks it.)
+via tech-package overlay; our tree lacks it.
+
+Surfaced again 2026-05-05 during 2E batch 1: qcom_lpm wire-up
+mistakenly built drivers/soc/qcom/qcom_lpm_monitor.c — a totally
+different driver from the OEM cpuidle LPM governor at
+drivers/cpuidle/governors/qcom-lpm.c. exports_superset_check
+passed 0/0 because both modules export nothing; the size delta
+(28KB ours vs 89KB OEM) and modinfo description mismatch were
+the only signals. Modinfo description-match verification now
+mandatory.)
 
 ---
 
