@@ -3183,6 +3183,130 @@ user confirmation before proceeding to wire-up.
 
 ---
 
+## Sub-wave 2I retrospective (2026-05-07)
+
+### Outcome: 4/4 modules clean, 5/5 EXPORTs delivered
+
+| Module | Source | Exports | Verdict |
+|---|---|---:|---|
+| `btpower` | `bt-kernel/pwr/btpower.c` | 2/2 | pass-exact |
+| `btfmcodec` | `bt-kernel/btfmcodec/{btfm_codec,..._hw_interface,..._interface,..._btadv_interface}.c` | 3/3 | pass-exact |
+| `btfm_slim_codec` | `bt-kernel/slimbus/{btfm_slim,...,_hw_interface,..._slave}.c` | 0/0 | pass-exact |
+| `bt_fm_swr` | `bt-kernel/soundwire/{btfm_swr,..._hw_interface,..._slave}.c` | 0/0 | pass-exact |
+
+All 4 modinfo descriptions match OEM exactly (Step 7.8c
+mandatory check). First non-zero-EXPORT sub-wave in Wave 2; the
+"missing EXPORTs cumulative" claim (Metric A) holds — 5 OEM
+exports, 5 delivered, 0 missing.
+
+### Cumulative-evidence line update (Step 7.10 canonical format)
+
+> **Missing EXPORTs: 0 cumulative across all sub-waves.** Buffer: 2.
+> Evidence: 9 ext-module sub-waves + 14 kernel-internal-already-built
+> + 2 techpack-overlay-patched = 28 data points across 3 classes.
+> Per-sub-wave OEM-EXPORT verification: 9/9 sub-waves passing
+> (8 at 0/0; 2I at 5/5 pass-exact across btpower + btfmcodec).
+
+Buffer of 2 = qcom_lpm + qcom-vadc-common (still pending 2E
+batch 2 audit; not yet resolved).
+
+### Iteration count: 6 to green
+
+| v | Failure mode | Fix |
+|---|---|---|
+| v1 | cross-leaf header `-I` missing (audio-kernel/include + wlan/platform/inc) | `subdir-ccflags-y` in canoe-gated Kbuild block |
+| v2 | intra-tree header path missing (btfmcodec/include into soundwire/) | OEM-omission fix in soundwire/Makefile |
+| v3 | modpost cross-tree symvers (swr_* + cnss_utils_fmd_status) | new `synth_symvers.py` tool + KBUILD_EXTRA_SYMBOLS wiring |
+| v4 | KBUILD_EXTRA_SYMBOLS path-resolution (`$(M)` vs `$(CURDIR)`) | use `$(CURDIR)` per the documented 2H pattern |
+| v5 | depmod-layer symvers (same symbol re-flagged at depmod stage) | new `BOARD_VENDOR_KERNEL_MODULES_DEPMOD_BRIDGE_DIR` + kernel.mk patch |
+| v6 | — | green |
+
+### Iteration-budget pre-decisions: how they performed
+
+**v3 sub-wave-specific yellow flag fired correctly.** The locked
+rule said v3-without-green = pause, run row-3 verification of the
+6-row signature. The pause happened, the verification surfaced a
+genuinely cross-tree finding (not a row-3 intra-tree issue but a
+sibling KBUILD_EXTRA_SYMBOLS gap), and the disposition (build the
+synth_symvers primitive + wire the KBUILD_EXTRA_SYMBOLS path)
+landed at v5. The pre-decision worked exactly as designed.
+
+**Layered surfacing — not novel-class-per-iteration.** The bug
+class shifted at each iteration but each fix advanced the build
+further into the pipeline (compile → modpost → depmod). This is
+distinct from the 2F.3 pattern (each iteration uncovering a new
+class with no convergence signal). Step 7.9's 2× escalation rule
+correctly didn't fire — the convergence signal was clear at every
+iteration.
+
+**v6 = running max for Wave 2.** Updated escalation threshold:
+2× new running max → 12 iterations next time around.
+
+### Two new bridge primitives landed
+
+This sub-wave produced two reusable build-system artifacts that
+generalize to future sub-waves consuming OEM-prebuilt-only
+producers (likely re-users: 2G msm graphics/video, Wave 5 WLAN):
+
+1. **`tools/jm2/synth_symvers.py`** — extracts CRC + GPL/non-GPL
+   classification from an OEM .ko's `__crc_*` + `__ksymtab`
+   sections, emits a Module.symvers row in kernel format.
+   Single-symbol or multi-symbol per invocation.
+
+2. **`BOARD_VENDOR_KERNEL_MODULES_DEPMOD_BRIDGE_DIR`** —
+   per-device opt-in knob (set in BoardConfig) that flat-stages
+   OEM .kos into the depmod staging dir before source-built
+   modules, so depmod's "needs unknown symbol" check has the
+   same view modprobe will have at runtime. Source-built modules
+   override OEM via `cp` ordering.
+
+Both primitives are documented in WIRE_UP_RECIPE Step 7.8d
+(OEM-prebuilt-sibling-producer class; meta-table at Step 7.8a
+now lists three classes with three remediation paths:
+**defer / replicate / bridge**).
+
+### Three new commits in vendor/lineage and device trees
+
+- `vendor/lineage/build/tasks/kernel.mk`: depmod-layer bridge
+  patch (adds `$(9)` parameter to `build-image-kernel-modules-lineage`).
+- `device/oneplus/sm8850-common/BoardConfigCommon.mk`: opt into
+  the bridge for canoe.
+- `kernel/oneplus/sm8850-modules/vendor/qcom/opensource/bt-kernel/`:
+  three commits (canoeauto.conf + Kbuild include; soundwire
+  -I btfmcodec/include OEM-omission fix; KBUILD_EXTRA_SYMBOLS
+  with `$(CURDIR)`).
+- `kernel/oneplus/sm8850-modules/tools/jm2/synth_symvers.py`:
+  the new tool.
+- `kernel/oneplus/sm8850-modules/vendor/qcom/opensource/wlan/platform/Module.symvers`:
+  synth seed for `cnss_utils_fmd_status`.
+
+### Calibration discipline note
+
+Option B (drop FMD_ENABLE) was on the table at v5 and was
+explicitly rejected on calibration-discipline grounds — "ship
+behavioral parity, not divergence-and-hope." The bridge approach
+preserves runtime behavior identical to OEM and produces reusable
+build-system primitives. This is the correct disposition for the
+class; the rejection of Option B should be cited in the post-2I
+retrospective as the institutional artifact about how the
+calibration discipline informs disposition decisions.
+
+### Status
+
+2I closed with effective scope = 4 modules clean. Wave 2 now has
+**9 ext-module sub-waves + 14 kernel-internal-already-built +
+2 techpack-overlay-patched** complete. Remaining backlog:
+- 2E batch 2 (6 candidates) — still on hold pending audit
+- 2F.3 charger v2 (deferred per OEM-Bazel-environment-coupled class)
+- 2G msm graphics/video (last; class TBD per pre-flight)
+- Wave 5 WLAN (deferred until Wave 2 closes)
+
+**Phase 6 (hardware flash test) is now actionable.** All static
+gates green; ROM is flashable. Decision: continue Wave 2 or
+proceed to Phase 6 with deferred work shipping as OEM prebuilts.
+
+---
+
 ## Sub-wave 2B onwards — heterogeneous module backlog
 
 After the clock cluster lands, Wave 2 moves to the OEM-prebuilt-only
