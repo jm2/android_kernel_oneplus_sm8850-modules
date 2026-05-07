@@ -531,8 +531,16 @@ mechanisms.
 
 | Sub-class | Where | Symptom | Remediation |
 |---|---|---|---|
-| OEM-Bazel-environment-coupled (Step 7.8 above) | Ext-module trees translated to TARGET_KERNEL_EXT_MODULES | 6+ Bazel-only build assumptions; iteration count exceeds 2× running max without convergence | Defer to OEM prebuilt; preserve in-tree build infrastructure for future resumption |
-| OEM-techpack-overlay-coupled (Step 7.8b below) | Kernel-internal drivers under `kernel/oneplus/sm8850/drivers/...` | Source file + Kconfig present, but Makefile in same directory has no `obj-$(CONFIG_X)` entry | Per-module triage: patch Makefile for runtime-active modules; defer OEM-internal/diagnostic-only modules to OEM prebuilt |
+| OEM-Bazel-environment-coupled (Step 7.8 above) | Ext-module trees translated to TARGET_KERNEL_EXT_MODULES | 6+ Bazel-only build assumptions; iteration count exceeds 2× running max without convergence | **Defer** to OEM prebuilt; preserve in-tree build infrastructure for future resumption |
+| OEM-techpack-overlay-coupled (Step 7.8b below) | Kernel-internal drivers under `kernel/oneplus/sm8850/drivers/...` | Source file + Kconfig present, but Makefile in same directory has no `obj-$(CONFIG_X)` entry | **Replicate**: per-module triage — patch Makefile for runtime-active modules; defer OEM-internal/diagnostic-only modules to OEM prebuilt |
+| OEM-prebuilt-sibling-producer (Step 7.8d below) | Source-built consumer references symbols exported by an OEM-prebuilt-only producer (typical when sibling subsystem is deferred to a later wave) | modpost: `undefined! [consumer.ko]`; depmod: `needs unknown symbol` | **Bridge**: synth_symvers (modpost layer) + BOARD_VENDOR_KERNEL_MODULES_DEPMOD_BRIDGE_DIR (depmod layer). Both required. |
+
+**Three remediation paths emerge: defer / replicate / bridge.**
+The disposition decision when OEM has build infrastructure we
+don't depends on which class fits and what the cost ratio looks
+like. Don't conflate the classes: a Bazel-coupled module is not
+fixed by a bridge; a prebuilt-sibling is not fixed by replicating
+OEM's Makefile; a techpack-overlay is not fixed by deferral.
 
 When a future module is identified as OEM-build-system-coupled,
 classify it into the relevant sub-class. The disposition workflow
@@ -751,6 +759,162 @@ This is exactly the failure-mode class that pre-flash
 calibration discipline is meant to catch. Treat the modinfo
 check as a non-negotiable verification step for every
 kernel-internal module wire-up, not an optional sanity check.
+
+---
+
+## Step 7.8d — OEM-prebuilt-sibling-producer class (modpost + depmod bridges)
+
+**Class definition.** A source-built consumer module references
+symbols exported by a producer .ko that we don't source-build —
+the producer ships only as an OEM prebuilt under
+`device/<vendor>/<board>-kernel/`. Typical case: a sub-wave
+source-builds a cross-tree consumer (e.g. bt-kernel's btpower.ko)
+that depends on a sibling subsystem we deferred (e.g. WLAN's
+cnss_utils.ko). The producer is shipping today via
+`BOARD_VENDOR_KERNEL_MODULES`; modprobe at runtime resolves the
+dependency fine because both .kos are in vendor_dlkm. The build,
+however, runs two checks the OEM-prebuilt isn't visible to:
+modpost and depmod. Both fail despite runtime correctness.
+
+**This class has TWO layers, requiring TWO bridge primitives.**
+Both primitives are needed; using only one isn't enough.
+
+### Layer 1 — modpost-layer bridge (synth_symvers)
+
+Modpost validates that every undefined external symbol in our
+source-built `.ko` resolves against either vmlinux's `Module.symvers`
+or against an explicitly-listed `Module.symvers` from
+`KBUILD_EXTRA_SYMBOLS`. OEM-prebuilt producers don't have a
+`Module.symvers` in our tree because we don't build them.
+
+**Tool:** `tools/jm2/synth_symvers.py`. Extracts the CRC and
+GPL/non-GPL classification for a symbol from an OEM .ko's
+`__crc_*` + `__ksymtab` sections, emits a Module.symvers row
+in the kernel's exact format (`0x<crc>\t<sym>\t<src>\t<EXPORT_*>\t<ns>`).
+Usage:
+
+```bash
+python3 tools/jm2/synth_symvers.py \
+  --from-ko device/<vendor>/<board>-kernel/<producer>.ko \
+  --symbol <symbol-name> \
+  --src-path <plausible-source-path-of-producer> \
+  --out vendor/qcom/opensource/<producer-tree>/Module.symvers
+```
+
+The output Module.symvers is a synthetic seed (force-add to git
+overriding the standard `.gitignore: Module.symvers` rule —
+explain provenance in the commit message). Wire into the
+consumer ext-module's wrapper Makefile via:
+
+```makefile
+KBUILD_EXTRA_SYMBOLS := $(abspath $(CURDIR)/../<sibling-tree>/Module.symvers)
+KBUILD_EXTRA_SYMBOLS += <other-paths-as-needed>
+export KBUILD_EXTRA_SYMBOLS
+```
+
+**Use `$(CURDIR)`, not `$(M)`.** LineageOS kernel.mk passes
+`M=../sm8850-modules/.../<consumer>` as a CLI override which
+makes `$(M)` a relative path; `$(abspath $(M)/../...)` then
+resolves with CWD-prefixing and produces a doubled-up bogus
+path. `$(CURDIR)` is always the absolute Make CWD regardless of
+`M=` override. (Surfaced 2026-05-07 in 2I bt-kernel v4 → v5
+iteration; pattern matches `datarmnet-ext/*/Makefile`.)
+
+### Layer 2 — depmod-layer bridge (BOARD_VENDOR_KERNEL_MODULES_DEPMOD_BRIDGE_DIR)
+
+Even with modpost satisfied, Lineage's `kernel.mk` runs depmod
+on the source-built module set and greps stderr for `"needs
+unknown symbol"`. depmod ignores `Module.symvers` files; it
+walks the staging dir and reads each .ko's symbol table directly.
+Without the OEM producer .ko in the staging dir, depmod can't
+find the exporter and errors.
+
+**Patch:** Lineage's `vendor/lineage/build/tasks/kernel.mk`
+`build-image-kernel-modules-lineage` function gains a `$(9)`
+parameter for the OEM-prebuilt-bridge directory. The directory's
+.kos are flat-staged into the depmod staging dir BEFORE the
+source-built modules are copied, so source-built versions
+override OEM on name collision (preserving our build's
+authority over modules we replace) while OEM-only producers
+become visible to depmod's symbol resolver.
+
+**Device opt-in:** set
+`BOARD_VENDOR_KERNEL_MODULES_DEPMOD_BRIDGE_DIR` in the device's
+BoardConfig to the OEM prebuilt directory:
+
+```makefile
+BOARD_VENDOR_KERNEL_MODULES_DEPMOD_BRIDGE_DIR := \
+    $(COMMON_PATH)/../<board>-kernel
+```
+
+Three vendor_dlkm depmod call sites in kernel.mk pass this
+through as `$(9)`. Empty by default; no behavior change for
+devices that don't opt in.
+
+**Why two primitives, not one.** Modpost reads `Module.symvers`
+files (we synthesize one); depmod reads `.ko` symbol tables
+(we stage the actual OEM .ko). The semantics differ; the
+plumbing differs. Conflating them produces an incomplete bridge
+that passes the early stage and fails the later stage — exactly
+what 2I v3 → v5 surfaced (modpost passed at v5 only to fail at
+depmod immediately after).
+
+### Detection signature
+
+| Stage | Symptom |
+|---|---|
+| modpost | `ERROR: modpost: "<sym>" [<consumer>.ko] undefined!` |
+| depmod | `depmod: WARNING: <consumer>.ko needs unknown symbol <sym>` followed by `ERROR: kernel module(s) need unknown symbol(s)` |
+
+Producer identification:
+
+```bash
+# Find the .ko in OEM prebuilts that exports the symbol
+nm <oem-prebuilt-dir>/*.ko | grep " T <symbol>" | head -3
+# Or if the symbol's gated, check .modinfo
+modinfo <oem-prebuilt-dir>/<candidate>.ko | grep '^description:'
+```
+
+### Disposition framework
+
+- **Source-built consumer + OEM-prebuilt producer (typical
+  case):** apply both bridges. Cheap once primitives exist.
+- **Source-built producer + OEM-prebuilt consumer (inverse):**
+  no bridge needed for our build (consumer is OEM, runs through
+  OEM build flow); we just need to ensure our source-built
+  producer exports the same symbols at the same CRCs as OEM's.
+  Verified by `exports_superset_check` and CRC consistency.
+- **Both source-built (eventually):** standard ext-module flow
+  via `KBUILD_EXTRA_SYMBOLS` pointing at the producer's actual
+  Module.symvers (no synthesis, no depmod-bridge). 2C audio-kernel
+  + 2I bt-kernel's swr_* dependency is this case.
+
+**Don't drop the consumer's reference to satisfy modpost.**
+Compiling out a `#ifdef CONFIG_X` gate to avoid the dep
+introduces behavioral divergence vs OEM (the same calibration
+discipline that made 2F.3 a defer rather than a stub-and-ship).
+The bridge approach preserves parity.
+
+**Don't source-build the producer just to satisfy modpost.**
+Pulling Wave 5 (or whichever wave the producer belongs to)
+forward to unblock the current sub-wave is exactly the scope
+creep that 2F.3's 14-iteration overrun demonstrated against.
+Use the bridge primitives instead.
+
+### Surfaced 2026-05-07 during 2I batch 1.
+
+`bt-kernel/pwr/btpower.c` references `cnss_utils_fmd_status`
+under `#ifdef CONFIG_FMD_ENABLE` (FM-coexistence-detection
+power-coordination path). OEM target.bzl `define_canoe()` enables
+`CONFIG_FMD_ENABLE` for canoe. The producer `cnss_utils.ko` is
+in `wlan/platform/` (Wave 5, deferred). v3 surfaced the modpost
+half (multiple swr_* + cnss_utils symbols undefined); the
+synth_symvers + KBUILD_EXTRA_SYMBOLS fix landed at v5. v5
+surfaced the depmod half (same symbol re-flagged at depmod);
+the kernel.mk + BoardConfig bridge fix landed at v6.
+
+The class is now fully characterized with both bridges
+documented. Future sub-waves should expect to use both.
 
 ---
 
