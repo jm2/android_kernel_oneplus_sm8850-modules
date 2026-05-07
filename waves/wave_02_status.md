@@ -3032,14 +3032,40 @@ defconfig fragments) applies to **kernel-internal modules
 only** — those whose Kconfig stanzas live under
 `kernel/oneplus/sm8850/` and reach `auto.conf` natively.
 
-For **ext-module sub-waves** (modules under
-`kernel/oneplus/sm8850-modules/vendor/...`), the
+For **ext-module sub-waves** with a pre-existing `config/`
+mechanism in the OEM tree (modules under
+`kernel/oneplus/sm8850-modules/vendor/...` that already source
+a `canoeauto.conf` analog or have an existing config-include
+pattern for sibling targets), the
 `config/canoeauto.conf` + `include $(BT_ROOT)/config/...` +
 gate-on-`CONFIG_ARCH_CANOE` pattern is the right mechanism.
-The audio-kernel (2C) precedent is the canonical example.
+The audio-kernel (2C) precedent is the canonical example;
+2I bt-kernel mirrors it.
+
+**Third pattern, not yet encountered (deferred decision):**
+ext-module sub-waves where the OEM source tree has **no
+existing `config/` directory mechanism** for any platform —
+i.e., we'd be introducing the canoeauto.conf pattern de novo,
+not mirroring an existing sibling. For those, the choice is:
+
+- **(a)** Introduce `config/` to the OEM tree de novo (larger
+  touch but consistent with existing project patterns); OR
+- **(b)** Wrapper Kbuild outside the OEM tree that injects
+  CONFIG vars without modifying OEM source (avoids OEM-tree
+  modification but adds indirection).
+
+This third pattern is most likely to surface in **2G msm
+graphics/video** (msm_kgsl, msm-eva, msm_video). When 2G prep
+starts, if no `config/canoe*.conf` analog exists in those
+trees, the prep agent should pre-decide (a) vs (b) explicitly
+rather than defaulting to either; the choice depends on
+whether OEM-tree modifications for that subsystem are
+acceptable given the rebase-maintenance cost projection.
+
 File this as a recipe convention update in the next
-WIRE_UP_RECIPE pass: distinguish between the two patterns
-by module-class, not by sub-wave.
+WIRE_UP_RECIPE pass: distinguish between the three patterns
+by module-class plus presence-of-OEM-config-mechanism, not
+by sub-wave.
 
 ### EXPORT-count expectation — first non-zero-EXPORT sub-wave
 
@@ -3073,17 +3099,80 @@ So post-2I, the canonical line should read something like:
 Plan to update WIRE_UP_RECIPE Step 7.10 with this refined
 phrasing on 2I close.
 
+### Pre-flight C-side ifdef check (Step 7.6 silent-skip preempt)
+
+Grep for `#ifdef CONFIG_X` / `#if IS_ENABLED(CONFIG_X)` over
+our 4 CONFIGs surfaced one hit: `slimbus/btfm_slim.{h,c}` use
+`#if IS_ENABLED(CONFIG_SLIM_BTFM_CODEC)`. bt-kernel/Kbuild's
+existing `ifeq ($(CONFIG_SLIM_BTFM_CODEC), m) → KBUILD_CPPFLAGS
++= -DCONFIG_SLIM_BTFM_CODEC` block already mirrors Make-side
+to C-side; gcc's default `-DX` produces `#define X 1` which
+makes `IS_ENABLED(X)` evaluate true. **No canoeautoconf.h
+needed.**
+
+Other `#ifdef CONFIG_*` patterns in the bt-kernel sources, with
+disposition:
+- `CONFIG_BT_HW_SECURE_DISABLE` (pwr/) — OEM target.bzl
+  comments this out for canoe → leave OFF.
+- `CONFIG_FMD_ENABLE` (pwr/) — OEM target.bzl enables this for
+  canoe → **must add `export CONFIG_FMD_ENABLE=y` to
+  canoeauto.conf** so btpower's FM-power-control paths compile
+  in (else our btpower.ko diverges from OEM's).
+- `CONFIG_MSM_BT_OOBS` (pwr/, include/) — not in OEM canoe
+  config → leave OFF.
+- `CONFIG_SLIM_BTFM_CODEC_DRV` (btfmcodec/) — different symbol
+  from CONFIG_SLIM_BTFM_CODEC; not in OEM canoe config → leave
+  OFF.
+- `CONFIG_BTFM_SLIM` (slimbus/) — legacy bt_fm_slim driver, not
+  canoe → leave OFF.
+
+**Final canoeauto.conf contents (5 lines):**
+```
+export CONFIG_MSM_BT_POWER=m
+export CONFIG_BTFM_CODEC=m
+export CONFIG_SLIM_BTFM_CODEC=m
+export CONFIG_BTFM_SWR=m
+export CONFIG_FMD_ENABLE=y
+```
+
 ### Iteration budget pre-decision
 
-- **Yellow flag at v6**: pause and run Step 7.8 + Step 7.8b
-  re-checks before continuing tactical fixes.
-- **Step 7.9 escalation at v8** (running max 4 × 2): force
+**General Wave 2 escalation rules:**
+- **Yellow flag at v6** (running max 4 × ~1.5): pause and run
+  Step 7.8 + Step 7.8b re-checks before continuing tactical fixes.
+- **Step 7.9 escalation at v8** (running max × 2): force
   bug-class pattern review.
 
-Given the clean 0/6 signature score, I'd predict **v1 or v2
-green** is realistic. If we hit v3 without clearing, that
-itself is a yellow flag for this sub-wave (signature was
-clean → unexpected complexity warrants pause).
+**Sub-wave-specific rule for 2I (added 2026-05-07):**
+
+Given the 0/6 signature score, v1 or v2 green is the realistic
+baseline. **If v3 hits without clearing, that itself is the
+yellow flag for this sub-wave** — pause tactical iteration
+before v4 and verify the row 3 ("intra-tree symvers resolution
+within the same `M=$(M)` invocation") claim from the 6-row
+check.
+
+**Concrete verification step on v3 yellow flag:**
+
+```bash
+# After a partial brunch (or whenever bt-kernel's modpost runs),
+# inspect the produced Module.symvers for btpower's exports:
+grep btpower_ \
+  out/target/product/infiniti/obj/DLKM_OBJ/.../bt-kernel/Module.symvers
+```
+
+Expected: two rows, one each for `btpower_register_slimdev` and
+`btpower_get_chipset_version` (with non-zero CRCs). If those
+rows are present, the intra-tree symvers claim is correct and
+the wire-up shape is right; the failure is something else and
+tactical iteration may continue. If the rows are missing, the
+"all 4 modules build under the same M=$(M) invocation" claim
+is wrong and we need explicit `KBUILD_EXTRA_SYMBOLS` wiring
+from slimbus + soundwire pointing at btpower's symvers — same
+pattern 2H surfaced for `oplus_network_*`.
+
+The v3 trigger is specific to 2I's clean signature; the general
+Wave 2 v6 yellow flag and v8 escalation rules still apply.
 
 ### Status
 
