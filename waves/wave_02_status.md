@@ -2770,13 +2770,16 @@ sub-waves.
 
 ### Cumulative-evidence line update
 
-Per the prep doc's "split by sub-class" framing, the line now
-reads:
+Per WIRE_UP_RECIPE Step 7.10 canonical format:
 
-> **0 EXPORTs across 8 ext-module sub-waves + 14 kernel-internal
-> modules (already CONFIG=y) + 2 OEM-techpack-overlay-coupled
-> patched modules = 24 total evidence data points across 3
-> classes.**
+> **0 EXPORTs cumulative.** Evidence: 8 ext-module sub-waves
+> + 14 kernel-internal-already-built + 2 techpack-overlay-patched
+> = 24 data points across 3 classes. **Buffer: 2.**
+
+Buffer of 2 = `qcom_lpm` and `qcom-vadc-common`, deferred from
+2E batch 1 pending Kconfig+Makefile audit. Both will be
+characterized between 2I close and batch 2 start (see 2I prep
+section below).
 
 The "patched" sub-sub-class trend line starts at n=2, both
 clean. Insufficient to claim the class is no-iteration cheap;
@@ -2784,6 +2787,28 @@ sufficient to confirm the 6-row OEM-techpack-overlay-coupled
 signature in Step 7.8b is correct on first touch when the
 modinfo-match check is applied pre-build (catches qcom_lpm-style
 collisions at recipe time, not brunch time).
+
+### Institutional artifact: name-collision false-positive class
+
+The qcom_lpm wrong-source detection wasn't a near-miss — it was
+a real false-positive escape that the prior verification stack
+(`exports_superset_check`, depmod, vermagic) didn't catch. None
+of those would have flagged the wrong-source wire-up; modinfo
+description was the only static signal.
+
+Runtime consequence if this had shipped: `qcom_lpm.ko` would
+have loaded at boot, registered nothing useful as a cpuidle
+governor, and the device would have run without low-power
+management entirely. Phase 6 hardware test would have surfaced
+the symptom as "battery drains 3× faster than expected" with no
+obvious link to the kernel-module wire-up days/weeks earlier.
+
+This is now documented as **WIRE_UP_RECIPE Step 7.8c** with
+stable signature: (filename matches OEM) + (both 0-export →
+exports_superset_check pass-exact 0/0) + (modinfo description
+mismatch OR size delta >50%). Any one of the last two flags the
+collision; both together is unambiguous. The modinfo-match check
+is now non-negotiable for every kernel-internal module wire-up.
 
 ### Disposition for batch 2 (Kconfig+Makefile)
 
@@ -2820,6 +2845,79 @@ only schedule.
 
 2E batch 1 effective scope = **2 modules clean**. Batch 2 (6
 modules) deferred pending sequencing decision.
+
+---
+
+## Sub-wave 2I prep — bluetooth platform (4 modules) (2026-05-06)
+
+### Sequencing rationale
+
+Per Opus Web institutional review post-2E batch 1: 2I →
+qcom_lpm + qcom-vadc-common audit → batch 2. 2I is a fresh
+sub-wave on a known class (ext-module flow) with low iteration
+risk; batch 2's 6 candidates have asymmetric iteration risk
+that benefits from the audit running between 2I close and
+batch 2 start. The audit can then incorporate any signature
+findings from 2I that might apply to batch 2.
+
+### Pre-decision: dual-signature pre-flight check
+
+Bluetooth platform shims are most likely ext-module flow but
+prior sub-waves have surfaced that the assumption isn't always
+right (2H's `oplus_network_*` modules were assumed simple-leaf
+and turned out to need cross-leaf symvers wiring). For 2I prep,
+run BOTH:
+
+1. **Step 7.8 6-row ext-module signature check** — for each
+   module: Bazel-only build assumption count, EXTRA_CFLAGS
+   shape, KBUILD_EXTRA_SYMBOLS expectation, etc.
+2. **Step 7.8b OEM-techpack-overlay-coupled check** — for each
+   module: source path under `kernel/oneplus/sm8850/drivers/`
+   vs ext-module tree, Makefile obj-$() entry presence,
+   Kconfig stanza visibility.
+
+If a module turns out to be kernel-internal (Step 7.8b class)
+rather than ext-module (Step 7.8 class), the prep + wire-up
+shape changes. Cheap to check both signatures pre-build;
+expensive to discover mid-iteration.
+
+### Pre-decision: iteration budget
+
+Prior 4-module sub-wave was 2H (4 iterations to green).
+Running max across Wave 2 is 4 (2H = 2F.2 = 4). Step 7.9
+escalation threshold is 2× running max = **8 iterations**.
+
+For 2I specifically, treat **6 iterations** as a yellow flag:
+pause the tactical-fix loop and run Step 7.8 + Step 7.8b
+checks before iterating further. Don't wait until v8 — the
+asymmetric cost of structural-mismatch escapes (2F.3 took 14
+iterations to surface what was visible at 4-5) makes the
+yellow-flag rule worth applying earlier on a sub-wave with
+known low complexity expectation.
+
+If 2I reaches v6 without green, write up the bug pattern from
+v1-v5 and check whether the bugs are recurrence-heavy (continue)
+or novel-class-per-iteration (structural-mismatch candidate).
+
+### Pre-decision: what success looks like
+
+- 4 modules with `pass-exact` or `pass-additive` on
+  `exports_superset_check`
+- All 4 with matching `modinfo description:` against OEM .ko
+  (Step 7.8b mandatory check applies even for ext-module class
+  — name-collision false-positive is class-agnostic)
+- Brunch v1 ideally green; v2-v3 acceptable; v4+ apply the
+  yellow-flag rule
+
+Cumulative-evidence line update on close (per Step 7.10):
+8 → 9 ext-module sub-waves; 24 → 28 data points (assuming all
+4 land clean); Buffer holds at 2 (qcom_lpm + qcom-vadc-common
+not yet resolved).
+
+### Status
+
+Prep starting now. First task: identify the 4 bluetooth
+modules from `modules.load` and locate their source trees.
 
 ---
 

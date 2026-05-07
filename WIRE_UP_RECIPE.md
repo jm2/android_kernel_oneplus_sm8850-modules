@@ -539,6 +539,10 @@ classify it into the relevant sub-class. The disposition workflow
 differs by sub-class. If a new manifestation emerges that doesn't
 fit either, document it as a third sub-class.
 
+**Related verification pitfall (not an OEM-coupling class but
+surfaced during OEM-techpack-overlay-coupled remediation):**
+name-collision-pass-exact false-positive — see Step 7.8c.
+
 ---
 
 ## Step 7.8b — OEM-techpack-overlay-coupled module class
@@ -629,18 +633,124 @@ diff <(modinfo our-build/foo.ko 2>/dev/null | grep '^description:') \
 If the descriptions don't match, the wire-up targeted the wrong
 source. Defer + re-investigate; don't ship.
 
+For the failure mode where two different sources in the tree
+both produce a .ko of the same name (and exports_superset_check
+passes false-positively), see Step 7.8c.
+
 (Surfaced 2026-05-05 in 2E qcom_qti pre-flight: 11 of 25 modules
 have source + Kconfig but no Makefile obj-$() entry. OEM ships
-via tech-package overlay; our tree lacks it.
+via tech-package overlay; our tree lacks it.)
 
-Surfaced again 2026-05-05 during 2E batch 1: qcom_lpm wire-up
-mistakenly built drivers/soc/qcom/qcom_lpm_monitor.c — a totally
-different driver from the OEM cpuidle LPM governor at
-drivers/cpuidle/governors/qcom-lpm.c. exports_superset_check
-passed 0/0 because both modules export nothing; the size delta
-(28KB ours vs 89KB OEM) and modinfo description mismatch were
-the only signals. Modinfo description-match verification now
-mandatory.)
+---
+
+## Step 7.8c — Name-collision false-positive (a.k.a. name-collision-pass-exact)
+
+**Class definition.** A source-built `.ko` shares its filename
+with the corresponding OEM prebuilt `.ko`, but is built from a
+*different* source path (different driver, different feature
+scope, different runtime behavior). Because both .kos export zero
+symbols (or coincidentally identical export sets),
+`exports_superset_check` reports `pass-exact` falsely. The
+build is structurally clean and the static check is green, but
+the deployed module is the wrong driver.
+
+**Stable signature (reproducible, transferable to future
+sub-waves).** Three signals jointly characterize the class:
+
+1. `.ko` filenames match OEM (collision precondition)
+2. Both `.ko`s export zero symbols — `exports_superset_check`
+   verdict `pass-exact` 0/0 (the false positive)
+3. `modinfo description:` differs OR `.ko` sizes differ by
+   more than ~50% (after accounting for debug info)
+
+Any one of (3)'s two sub-signals is sufficient to flag the
+collision; both together is unambiguous.
+
+This is **not** an OEM-build-system-coupling class (Step 7.8a),
+because the issue isn't where OEM wires the module — it's where
+*we* wired ours. It's a verification false-positive that surfaces
+during OEM-techpack-overlay-coupled remediation (Step 7.8b) when
+the OEM .ko name doesn't uniquely encode its source path.
+
+**Why exports_superset_check misses it.**
+
+The check compares the EXPORT_SYMBOL set of our build against
+OEM's. If both sets are empty (a leaf consumer driver that
+provides no exports for other modules), the check passes
+trivially regardless of what code is actually inside. Empty ⊇
+empty is always true. The check is sound for its design (it
+catches *missing exports*, not wrong-source builds).
+
+**Detection signature.**
+
+| Signal | Behavior in name-collision case |
+|---|---|
+| `.ko` filename | matches OEM ✓ (collision precondition) |
+| `exports_superset_check` verdict | `pass-exact` 0/0 — false positive |
+| `modinfo description:` | **mismatched** ← primary signal |
+| `.ko` size | typically 2–4× different (debug info aside, the actual code differs) |
+| `nm -D` symbol set | different (different undefineds, different statics) |
+| `modinfo depends:` | typically different (different framework deps) |
+
+The `modinfo description:` field is the primary distinguishing
+signal because it's a single static string written into the
+source's `MODULE_DESCRIPTION()` macro and survives strip. Size
+deltas can also come from debug info presence, so size alone is
+weak. nm symbol-set compare is strong but expensive.
+
+**Mandatory verification (also documented in Step 7.8b).**
+
+```bash
+diff <(modinfo our-build/foo.ko 2>/dev/null | grep '^description:') \
+     <(modinfo OEM-prebuilt/foo.ko 2>/dev/null | grep '^description:')
+```
+
+If output is empty → match → safe. If diff prints anything →
+wrong source. Defer + re-investigate.
+
+**Mitigation (pre-build).**
+
+Before patching `obj-$(CONFIG_X) += foo.o` for a kernel-internal
+module, confirm `foo.c` is the right source by reading its
+`MODULE_DESCRIPTION()` macro and comparing against
+`modinfo OEM-prebuilt/foo.ko | grep description:`. Don't rely
+on filename alone — kernel trees regularly have multiple `foo.c`
+or near-name-collisions across `drivers/<subsys>/`.
+
+**Surfaced 2026-05-05 during 2E batch 1.**
+
+`qcom_lpm.ko` wire-up mistakenly built
+`drivers/soc/qcom/qcom_lpm_monitor.c` (a debug "LPM monitor"
+driver, ~28 KB output) when OEM's `qcom_lpm.ko` is the cpuidle
+governor at `drivers/cpuidle/governors/qcom-lpm.c` plus
+`qcom-cluster-lpm.c` and `qcom-lpm-sysfs.c` (~89 KB output, gated
+on `CONFIG_SCHED_WALT`). Both leaf consumers, both 0-export →
+pass-exact 0/0. Modinfo description was the only static signal:
+"QTI LPM monitor" (ours) vs "QTI cpuidle LPM governor" (OEM).
+
+The wire-up was reverted (commit `c6c8c60a43a3`) and qcom_lpm
+deferred to a Kconfig+Makefile batch where the multi-source
+bundle and SCHED_WALT dep gate can be authored correctly.
+
+**Why this class matters (runtime consequence).**
+
+Without the modinfo-match check, the wrong-source `qcom_lpm.ko`
+would have shipped to vendor_dlkm, loaded at boot, and registered
+nothing useful as a cpuidle governor. The device would have been
+deployed without its low-power-management governor entirely. At
+hardware bring-up (Phase 6) the symptom would surface as
+"battery drains 3× faster than expected" or similar runtime
+behavior with no obvious link to the kernel-module wire-up
+days/weeks earlier. None of the prior verification stack catches
+it: depmod passes (the .ko is well-formed), vermagic matches
+(same kernel build), exports_superset_check passes vacuously
+(0/0). The modinfo-description check is the load-bearing
+diagnostic that closes the gap.
+
+This is exactly the failure-mode class that pre-flash
+calibration discipline is meant to catch. Treat the modinfo
+check as a non-negotiable verification step for every
+kernel-internal module wire-up, not an optional sanity check.
 
 ---
 
@@ -691,6 +801,57 @@ structural mismatch was *visible* by iteration 4–5 but the
 decision to stop didn't happen until iteration 14. Earlier
 recognition would have saved ~9 iterations of effort. This
 rule encodes the lesson.)
+
+---
+
+## Step 7.10 — Canonical cumulative-evidence format
+
+The "0 EXPORTs cumulative across N sub-waves" line is a
+load-bearing claim about Wave 2: it asserts that source-built
+modules consistently match OEM EXPORT counts and that we are
+therefore not silently shedding kernel API surface. As Wave 2
+adds more module classes (ext-module, kernel-internal-already-built,
+techpack-overlay-patched, Kconfig+Makefile-patched, etc.), the
+line gets longer and the temptation to compress it back into
+a lossy "N sub-waves at 0" framing grows.
+
+**Canonical format (do not drift from this):**
+
+> **0 EXPORTs cumulative.** Evidence: `<N>` ext-module sub-waves
+> + `<M>` kernel-internal-already-built + `<P>` techpack-overlay-patched
+> + ... = `<N+M+P+...>` data points across `<C>` classes. Buffer: `<B>`.
+
+Field semantics:
+- **N, M, P, ...**: per-class data-point counts. Each named class
+  gets its own term. Don't fold differently-shaped classes
+  together (that's the lossy-compression failure mode).
+- **classes count C**: how many distinct module classes the
+  evidence spans. Reinforces that the 0-EXPORT claim isn't
+  drawn from a single class.
+- **Buffer B**: count of modules whose disposition is pending
+  (deferred awaiting audit, mid-batch, or characterization
+  in flight). These modules are NOT in the cumulative count
+  yet but are tracked so future updates can see the queue.
+
+**Example (2026-05-06, end of 2E batch 1):**
+
+> **0 EXPORTs cumulative.** Evidence: 8 ext-module sub-waves
+> + 14 kernel-internal-already-built + 2 techpack-overlay-patched
+> = 24 data points across 3 classes. Buffer: 2.
+
+The Buffer of 2 here = `qcom_lpm` and `qcom-vadc-common`,
+deferred from 2E batch 1 pending Kconfig+Makefile audit.
+
+**Drift to avoid:**
+- ❌ "24 sub-waves at 0" — collapses class structure
+- ❌ "8 + 14 + 2 = 24, all clean" — drops the class qualifier
+- ❌ "0 EXPORTs across Wave 2 to date" — unbounded; doesn't
+  expose the data-point count for credibility
+
+If a future sub-wave introduces a new module class, add a new
+term to the line (`+ Q Kconfig+Makefile-patched`, etc.) and
+increment `C`. Resist the urge to fold it into an existing
+term unless the class is genuinely the same shape.
 
 ---
 

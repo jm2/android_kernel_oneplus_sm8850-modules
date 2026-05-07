@@ -569,6 +569,52 @@ after Wave 2 closes.
 
 ---
 
+## WIRE_UP_RECIPE Step 7.x structural cleanup pass at Wave 2 closeout
+
+**Surfaced:** 2026-05-06 (post-2E batch 1, Opus Web institutional review).
+
+**Context:** Wave 2 has accreted named diagnostic steps in the Step 7.x
+range as new failure-mode classes have surfaced:
+
+- 7.5: nm undefined-refs check (2D oplus_hbp_core)
+- 7.6: Make/C asymmetry silent-skip (2F.1 audio + 2F.3 charger)
+- 7.7: OEM-source `-Werror=unterminated-string-initialization` class (2F.2 + 2F.3)
+- 7.8: OEM-Bazel-environment-coupled signature (2F.3)
+- 7.8a: OEM-build-system-coupled meta-table (2E prep)
+- 7.8b: OEM-techpack-overlay-coupled + modinfo-match check (2E batch 1)
+- 7.8c: Name-collision false-positive (2E batch 1)
+- 7.9: Iteration-count escalation (2F.3 post-mortem)
+- 7.10: Cumulative-evidence canonical format (2E batch 1 closeout)
+
+The numbering is getting crowded. The classes don't all share a
+clean meta-pattern: 7.5/7.7 are toolchain-specific, 7.8/7.8b/7.8c
+are about OEM build-system coupling and its verification pitfalls,
+7.6 is a Make/C asymmetry, 7.9 is iteration-budget meta, 7.10 is
+documentation hygiene. The 7.8 family is internally coherent but
+sits awkwardly alongside 7.9/7.10.
+
+**Concrete tasks (post-Wave-2):**
+
+1. Group the OEM-build-system-coupling family as Step 7.8 with
+   sub-letters (already done structurally, but rename so the
+   numbering is intentional, not accreted).
+2. Promote 7.9/7.10 to Section 8 (or higher) titled "Wave-level
+   meta-rules" — distinct from the per-module recipe steps in 7.x.
+3. Move 7.5/7.6/7.7 toolchain-specific steps into an "Anti-patterns
+   / known toolchain quirks" subsection.
+4. Re-number consistently and update internal cross-references.
+
+**Rationale for deferring:** Restructuring during active wave
+landings risks breaking cross-references in the prep docs that
+agents are reading mid-iteration. Cleanup at Wave 2 closeout
+is the right time — pattern is fully exposed, no in-flight
+references to invalidate.
+
+**When to revisit:** End of Wave 2 (after 2I, 2E batch 2, 2G).
+Pair with the closeout retrospective.
+
+---
+
 ## Format
 
 To add new entries:
