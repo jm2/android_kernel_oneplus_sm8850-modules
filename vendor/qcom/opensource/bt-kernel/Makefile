@@ -13,8 +13,14 @@ KBUILD_OPTIONS+=  BT_ROOT=$(BT_ROOT)
 #                   (OEM-prebuilt; symvers synthesized via
 #                    tools/jm2/synth_symvers.py — see WIRE_UP_RECIPE
 #                    Step 7.8d, OEM-prebuilt-sibling-producer class)
-KBUILD_EXTRA_SYMBOLS := $(abspath $(M)/../audio-kernel/Module.symvers)
-KBUILD_EXTRA_SYMBOLS += $(abspath $(M)/../wlan/platform/Module.symvers)
+#
+# Use $(CURDIR) (Make's CWD), not $(M) — LineageOS kernel.mk passes
+# M=../sm8850-modules/.../bt-kernel as a CLI override, making $(M) a
+# relative path that produces a doubled-up abspath. $(CURDIR) is
+# always the absolute directory the Makefile is being parsed from.
+# Pattern matches datarmnet-ext/*/Makefile.
+KBUILD_EXTRA_SYMBOLS := $(abspath $(CURDIR)/../audio-kernel/Module.symvers)
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../wlan/platform/Module.symvers)
 export KBUILD_EXTRA_SYMBOLS
 
 all:
