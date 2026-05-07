@@ -6,6 +6,17 @@ BT_ROOT=$(KERNEL_SRC)/$(M)
 
 KBUILD_OPTIONS+=  BT_ROOT=$(BT_ROOT)
 
+# Cross-tree symvers wiring (Lineage canoe). Two producers our 4
+# canoe modules consume from:
+#   audio-kernel  — swr_dlkm.ko's swr_* symbols (source-built in 2C)
+#   wlan/platform — cnss_utils.ko's cnss_utils_fmd_status
+#                   (OEM-prebuilt; symvers synthesized via
+#                    tools/jm2/synth_symvers.py — see WIRE_UP_RECIPE
+#                    Step 7.8d, OEM-prebuilt-sibling-producer class)
+KBUILD_EXTRA_SYMBOLS := $(abspath $(M)/../audio-kernel/Module.symvers)
+KBUILD_EXTRA_SYMBOLS += $(abspath $(M)/../wlan/platform/Module.symvers)
+export KBUILD_EXTRA_SYMBOLS
+
 all:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) modules $(KBUILD_OPTIONS)
 
