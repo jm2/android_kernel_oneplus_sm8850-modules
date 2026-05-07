@@ -5,6 +5,15 @@
 # auto.conf, so this gate fires only on canoe builds.
 ifeq ($(CONFIG_ARCH_CANOE), y)
         include $(BT_ROOT)/config/canoeauto.conf
+        # Cross-leaf header paths needed under canoe:
+        #   audio-kernel/include — soundwire/btfm_swr.h consumes
+        #     <bindings/audio-codec-port-types.h>.
+        #   wlan/platform/inc   — pwr/btpower.c consumes <cnss_utils.h>.
+        # Use subdir-ccflags-y so the -I propagates into pwr/, soundwire/,
+        # btfmcodec/, slimbus/ compilation (per Step 7.6: subdir-ccflags-y
+        # vs ccflags-y propagation note).
+        subdir-ccflags-y += -I$(BT_ROOT)/../audio-kernel/include
+        subdir-ccflags-y += -I$(BT_ROOT)/../wlan/platform/inc
 endif
 
 ifeq ($(CONFIG_MSM_BT_POWER),m)
