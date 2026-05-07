@@ -1,3 +1,12 @@
+# Lineage canoe: source the per-target CONFIG export so the obj-$()
+# and ifeq() rules below have CONFIG_X set as Make variables. Pattern
+# mirrors audio-kernel/{dsp,asoc,...}/Kbuild's per-arch config-include.
+# CONFIG_ARCH_CANOE is in the kernel's Kconfig graph and reaches
+# auto.conf, so this gate fires only on canoe builds.
+ifeq ($(CONFIG_ARCH_CANOE), y)
+        include $(BT_ROOT)/config/canoeauto.conf
+endif
+
 ifeq ($(CONFIG_MSM_BT_POWER),m)
 KBUILD_CPPFLAGS += -DCONFIG_MSM_BT_POWER
 endif
