@@ -2981,18 +2981,65 @@ mandatory post-build per Step 7.8c.
    `CONFIG_BTFM_SWR=m`. Kconfig stanzas already exist in
    `pwr/Kconfig`, `btfmcodec/Kconfig`, `slimbus/Kconfig`,
    `soundwire/Kconfig` (proper tristate, deps fine for ARM64).
-3. **Config-export mechanism**: TBD whether to (a) add a
-   `config/canoe.conf` analogous to audio-kernel's
-   `canoeauto.conf`, (b) add CONFIG vars to the kernel's
-   defconfig fragment so they're set via `auto.conf`, or
-   (c) export them from a wrapper Kbuild. Option (b) is most
-   consistent with the recipe convention. **Decide during
-   write-up.**
+3. **Config-export mechanism — DECIDED 2026-05-07.**
+   Original plan was a `wave_2i_bluetooth.config` kernel
+   defconfig fragment per 2E precedent. **That approach does
+   not work for ext-module CONFIGs** because the kernel proper
+   has no Kconfig stanzas for these symbols — verified by
+   grep of `kernel/oneplus/sm8850/` Kconfigs (zero hits for
+   any of the 4 CONFIGs). A defconfig fragment line setting
+   `CONFIG_X=m` for a symbol with no in-tree Kconfig either
+   gets stripped by `olddefconfig` reconciliation or persists
+   into `auto.conf` but the bt-kernel Kbuild doesn't see it
+   because the variable name has to be in some sourced
+   Kconfig graph for it to be exported via `auto.conf`.
+
+   Audio-kernel solves this by including its own
+   `config/canoeauto.conf` (containing `export CONFIG_X=m`
+   lines) directly into its sub-Kbuilds, gated on
+   `CONFIG_ARCH_CANOE=y` (which IS in the kernel's Kconfig
+   graph and reaches `auto.conf` correctly). bt-kernel will
+   mirror this pattern.
+
+   **Required modifications to bt-kernel:**
+   - New file `vendor/qcom/opensource/bt-kernel/config/canoeauto.conf`
+     containing `export CONFIG_MSM_BT_POWER=m` + the other 3.
+   - Patch to `bt-kernel/Kbuild` adding (gated):
+     ```
+     ifeq ($(CONFIG_ARCH_CANOE), y)
+         include $(BT_ROOT)/config/canoeauto.conf
+     endif
+     ```
+
+   The patch is 4 lines + a 4-line config file in the OEM
+   source tree. Smallest-possible mirror of the audio-kernel
+   pattern. **C-side autoconf header (canoeautoconf.h) is NOT
+   needed** — bt-kernel/Kbuild already does
+   `KBUILD_CPPFLAGS += -DCONFIG_X` inside the `ifeq` blocks,
+   so `#ifdef CONFIG_X` in the .c sources see correct values
+   without a separate header.
+
 4. **Build order within bt-kernel**: top-level Kbuild's
    `obj-$(CONFIG_X) += subdir/` recursion handles ordering.
    slimbus + soundwire's calls into btpower/btfmcodec resolve
    via the shared `Module.symvers` produced in the same M=
    invocation — no explicit ordering needed.
+
+### Recipe-convention update for ext-module CONFIG export
+
+The 2E precedent (per-sub-wave `wave_<sub-wave>.config` kernel
+defconfig fragments) applies to **kernel-internal modules
+only** — those whose Kconfig stanzas live under
+`kernel/oneplus/sm8850/` and reach `auto.conf` natively.
+
+For **ext-module sub-waves** (modules under
+`kernel/oneplus/sm8850-modules/vendor/...`), the
+`config/canoeauto.conf` + `include $(BT_ROOT)/config/...` +
+gate-on-`CONFIG_ARCH_CANOE` pattern is the right mechanism.
+The audio-kernel (2C) precedent is the canonical example.
+File this as a recipe convention update in the next
+WIRE_UP_RECIPE pass: distinguish between the two patterns
+by module-class, not by sub-wave.
 
 ### EXPORT-count expectation — first non-zero-EXPORT sub-wave
 

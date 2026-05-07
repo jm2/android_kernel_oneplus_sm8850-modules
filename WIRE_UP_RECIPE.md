@@ -804,53 +804,100 @@ rule encodes the lesson.)
 
 ---
 
-## Step 7.10 — Canonical cumulative-evidence format
+## Step 7.10 — Canonical cumulative-evidence format (two metrics)
 
-The "0 EXPORTs cumulative across N sub-waves" line is a
-load-bearing claim about Wave 2: it asserts that source-built
-modules consistently match OEM EXPORT counts and that we are
-therefore not silently shedding kernel API surface. As Wave 2
-adds more module classes (ext-module, kernel-internal-already-built,
-techpack-overlay-patched, Kconfig+Makefile-patched, etc.), the
-line gets longer and the temptation to compress it back into
-a lossy "N sub-waves at 0" framing grows.
+Wave 2's "0 EXPORTs cumulative" framing was load-bearing in
+spirit but degenerate in form: every sub-wave through 2E batch 1
+had OEM-EXPORT count = 0 and source-built EXPORT count = 0,
+which made the literal "0 EXPORTs" wording ambiguous between
+two distinct metrics. Sub-wave 2I forces the disambiguation —
+bt-kernel modules export 5 symbols; the cumulative count goes
+non-zero.
 
-**Canonical format (do not drift from this):**
+The disambiguation: track **two separate metrics, not one
+renamed.**
 
-> **0 EXPORTs cumulative.** Evidence: `<N>` ext-module sub-waves
-> + `<M>` kernel-internal-already-built + `<P>` techpack-overlay-patched
-> + ... = `<N+M+P+...>` data points across `<C>` classes. Buffer: `<B>`.
+### Metric A — Missing EXPORTs cumulative (calibration metric)
+
+Counts EXPORT_SYMBOL declarations the project has had to add to
+upstream kernel files because a source-built module needs a
+symbol the kernel doesn't currently export. This was always the
+metric the EXPORT_SYMBOL upstream-cadence retirement criterion
+referred to. Wave 2 has been at 0 across all sub-waves to date.
+
+Aggregate cumulatively across all sub-waves. Retire the
+upstream-submission-pipeline tracker when this stays ≤ 2 through
+Wave 2 close.
+
+### Metric B — OEM-EXPORT delivery (per-sub-wave verification)
+
+Counts whether our source-built `.ko`s expose the same
+EXPORT_SYMBOL surface as the OEM prebuilts they replace.
+`pass-exact N/N` per module from `exports_superset_check`. This
+is binary per-module and per-sub-wave; it does NOT aggregate
+across sub-waves the way Metric A does.
+
+Track as "passing sub-wave count / total sub-wave count" and the
+per-sub-wave EXPORT total.
+
+### Canonical line (post-2I onwards)
+
+> **Missing EXPORTs: 0 cumulative across all sub-waves.** Buffer: `<B>`.
+> Evidence: `<N>` ext-module sub-waves + `<M>` kernel-internal-already-built + `<P>` techpack-overlay-patched + ... = `<N+M+P+...>` data points across `<C>` classes.
+> Per-sub-wave OEM-EXPORT verification: `<S>`/`<T>` sub-waves passing.
 
 Field semantics:
-- **N, M, P, ...**: per-class data-point counts. Each named class
-  gets its own term. Don't fold differently-shaped classes
-  together (that's the lossy-compression failure mode).
-- **classes count C**: how many distinct module classes the
-  evidence spans. Reinforces that the 0-EXPORT claim isn't
-  drawn from a single class.
-- **Buffer B**: count of modules whose disposition is pending
-  (deferred awaiting audit, mid-batch, or characterization
-  in flight). These modules are NOT in the cumulative count
-  yet but are tracked so future updates can see the queue.
+- **Missing EXPORTs**: Metric A. Cumulative across all sub-waves.
+- **N, M, P, ...**: per-class data-point counts (modules in each
+  class). Each named class gets its own term. Don't fold
+  differently-shaped classes together.
+- **C**: count of distinct module classes spanned.
+- **Buffer B**: modules whose disposition is pending (deferred
+  awaiting audit, mid-batch, or characterization in flight).
+  Not in the cumulative count yet.
+- **S/T**: Metric B. Number of sub-waves whose OEM-EXPORT
+  verification passed (typically all of them) over total
+  sub-wave count.
 
-**Example (2026-05-06, end of 2E batch 1):**
+### Example (post-2E batch 1, pre-2I)
 
-> **0 EXPORTs cumulative.** Evidence: 8 ext-module sub-waves
-> + 14 kernel-internal-already-built + 2 techpack-overlay-patched
-> = 24 data points across 3 classes. Buffer: 2.
+> **Missing EXPORTs: 0 cumulative across all sub-waves.** Buffer: 2.
+> Evidence: 8 ext-module sub-waves + 14 kernel-internal-already-built + 2 techpack-overlay-patched = 24 data points across 3 classes.
+> Per-sub-wave OEM-EXPORT verification: 8/8 sub-waves passing (all at 0/0 OEM-export count).
 
-The Buffer of 2 here = `qcom_lpm` and `qcom-vadc-common`,
-deferred from 2E batch 1 pending Kconfig+Makefile audit.
+### Example projection (post-2I, assuming 4/4 modules clean)
 
-**Drift to avoid:**
-- ❌ "24 sub-waves at 0" — collapses class structure
+> **Missing EXPORTs: 0 cumulative across all sub-waves.** Buffer: 2.
+> Evidence: 9 ext-module sub-waves + 14 kernel-internal-already-built + 2 techpack-overlay-patched = 28 data points across 3 classes.
+> Per-sub-wave OEM-EXPORT verification: 9/9 sub-waves passing (8 at 0/0; 2I at 5/5 pass-exact across btpower + btfmcodec).
+
+### Why two metrics, not one
+
+Metric A is about KMI surface evolution (are we adding API to
+the kernel?). Metric B is about per-build verification (do our
+modules match OEM's exported surface?). These are answering
+different questions:
+- A says "we did NOT need to expand the kernel's API."
+- B says "what we built matches what OEM ships, symbol-wise."
+
+A staying at 0 across Wave 2 is the upstream-submission story.
+B staying at 100% pass-rate is the per-sub-wave verification
+story. Conflating them — as the original "0 EXPORTs cumulative"
+framing did — produced a true claim that nevertheless fell
+apart the moment a sub-wave shipped non-zero exports. Keeping
+them separate keeps each claim sharp.
+
+### Drift to avoid
+
+- ❌ "0 EXPORTs cumulative" — old framing; ambiguous post-2I
+- ❌ "24 sub-waves at 0" — collapses class structure (Metric A)
 - ❌ "8 + 14 + 2 = 24, all clean" — drops the class qualifier
-- ❌ "0 EXPORTs across Wave 2 to date" — unbounded; doesn't
-  expose the data-point count for credibility
+- ❌ Reporting only one metric — drops the calibration vs
+  verification distinction
 
 If a future sub-wave introduces a new module class, add a new
-term to the line (`+ Q Kconfig+Makefile-patched`, etc.) and
-increment `C`. Resist the urge to fold it into an existing
+term to the Evidence line (`+ Q Kconfig+Makefile-patched`, etc.)
+and increment `C`. Resist the urge to fold it into an existing
 term unless the class is genuinely the same shape.
 
 ---
