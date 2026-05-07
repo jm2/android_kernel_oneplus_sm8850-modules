@@ -2914,10 +2914,136 @@ Cumulative-evidence line update on close (per Step 7.10):
 4 land clean); Buffer holds at 2 (qcom_lpm + qcom-vadc-common
 not yet resolved).
 
+### Module identification (2026-05-06/07)
+
+Source tree: `kernel/oneplus/sm8850-modules/vendor/qcom/opensource/bt-kernel/`.
+Currently OEM-prebuilt only (commented in BoardConfigCommon.mk
+line 255, "Modules currently sourced from prebuilt").
+
+Five `bt`-prefixed entries appear in `modules.load`. One is
+audio-cluster (`lpass_bt_swr_dlkm` → already source-built via
+`qcom/opensource/audio-kernel`, landed in 2C). Four are
+genuinely from bt-kernel:
+
+| Module | Source subdir | CONFIG | OEM .ko size | OEM exports | OEM description |
+|---|---|---|---:|---:|---|
+| `btpower` | `pwr/` | `CONFIG_MSM_BT_POWER` | 147 KB | 2 | "MSM Bluetooth power control driver" |
+| `btfmcodec` | `btfmcodec/` | `CONFIG_BTFM_CODEC` | 102 KB | 3 | "MSM Bluetooth FM CODEC driver" |
+| `btfm_slim_codec` | `slimbus/` | `CONFIG_SLIM_BTFM_CODEC` | 52 KB | 0 | "BTFM Slimbus Slave driver" |
+| `bt_fm_swr` | `soundwire/` | `CONFIG_BTFM_SWR` | 38 KB | 0 | "BTFM SoundWire Slave driver" |
+
+bt-kernel ships 8 modules total via `bt_modules.bzl`; 4 of those
+are gated for canoe per `bt_kernel_product_board.mk` (sun + canoe
+get the modern `btfmcodec` + `btfm_slim_codec` + `bt_fm_swr`
+trio; older boards get `bt_fm_slim` instead). Confirmed by the
+`is-board-platform-in-list, sun canoe` gate in vendor_board.mk.
+
+**OEM exports captured for verification:**
+- `btpower`: `btpower_register_slimdev`, `btpower_get_chipset_version`
+- `btfmcodec`: `btfmcodec_register_hw_ep`, `btfmcodec_unregister_hw_ep`, `btfm_get_btfmcodec`
+
+### Step 7.8 ext-module 6-row signature check
+
+| Row | Finding | Score |
+|---|---|---|
+| Bazel-only build assumptions | None. Standard kbuild idiom: `Makefile` does `$(MAKE) -C $(KERNEL_SRC) M=$(M)` with `BT_ROOT` env-passed. | 0 |
+| EXTRA_CFLAGS / include paths | Self-referential: `-I$(BT_ROOT)/include` and `-I$(BT_ROOT)/btfmcodec/include`. No cross-leaf paths. | 0 |
+| KBUILD_EXTRA_SYMBOLS | Not needed. Inter-module symbol consumers (slimbus/soundwire calling btpower + btfmcodec exports) resolve internally because all 4 modules build under the same `M=$(M)` invocation. | 0 |
+| Cross-leaf header includes | None. `include/btpower.h` is shared within bt-kernel; no audio-kernel/dsp-kernel/etc references. | 0 |
+| Generated headers / autoconf | No `canoeauto.conf` / `canoeautoconf.h` files. Top-level Kbuild does `KBUILD_CPPFLAGS += -DCONFIG_X` inside `ifeq ($(CONFIG_X),m)` blocks — Make-side gating becomes C-side defines automatically. **No Make/C asymmetry.** | 0 |
+| Platform gates (`-DCANOE`, `OPLUS_ARCH_EXTENDS`) | None observed. | 0 |
+
+**Verdict: clean ext-module class.** Signature score: 0/6 rows
+flagged. Closer to 2H's `oplus_network_*` shape than 2F.3's
+charger v2 disaster. v1-green is plausible.
+
+### Step 7.8b OEM-techpack-overlay-coupled check
+
+N/A at the tree level. Source path is under
+`kernel/oneplus/sm8850-modules/vendor/qcom/opensource/bt-kernel/`,
+not `kernel/oneplus/sm8850/drivers/`. This is an ext-module tree,
+not a kernel-internal driver dir. Step 7.8b's "obj-$(CONFIG_X)
+missing from in-tree Makefile" pitfall doesn't apply.
+
+Step 7.8c name-collision check: the OEM .ko names (btpower,
+btfmcodec, btfm_slim_codec, bt_fm_swr) are unique across the
+kernel + ext-module trees (no `drivers/.../btpower.c` etc).
+Pre-build collision risk: low. Modinfo description match still
+mandatory post-build per Step 7.8c.
+
+### Wire-up shape
+
+1. **One TARGET_KERNEL_EXT_MODULES entry**:
+   `qcom/opensource/bt-kernel`. (4 modules ship from it; no
+   per-module entries needed.)
+2. **CONFIG flags to flip (4)**: `CONFIG_MSM_BT_POWER=m`,
+   `CONFIG_BTFM_CODEC=m`, `CONFIG_SLIM_BTFM_CODEC=m`,
+   `CONFIG_BTFM_SWR=m`. Kconfig stanzas already exist in
+   `pwr/Kconfig`, `btfmcodec/Kconfig`, `slimbus/Kconfig`,
+   `soundwire/Kconfig` (proper tristate, deps fine for ARM64).
+3. **Config-export mechanism**: TBD whether to (a) add a
+   `config/canoe.conf` analogous to audio-kernel's
+   `canoeauto.conf`, (b) add CONFIG vars to the kernel's
+   defconfig fragment so they're set via `auto.conf`, or
+   (c) export them from a wrapper Kbuild. Option (b) is most
+   consistent with the recipe convention. **Decide during
+   write-up.**
+4. **Build order within bt-kernel**: top-level Kbuild's
+   `obj-$(CONFIG_X) += subdir/` recursion handles ordering.
+   slimbus + soundwire's calls into btpower/btfmcodec resolve
+   via the shared `Module.symvers` produced in the same M=
+   invocation — no explicit ordering needed.
+
+### EXPORT-count expectation — first non-zero-EXPORT sub-wave
+
+**Significant deviation from prior Wave 2 sub-waves.** Until 2E
+batch 1, every source-built module had 0 EXPORTs (matching OEM
+prebuilts that also had 0 EXPORTs). 2I introduces 5 EXPORTs (2
+from btpower + 3 from btfmcodec) into the cumulative count.
+
+Pre-decided EXPORT threshold: source-built must produce
+**≥5 EXPORTs total** across the 4 modules, with `pass-exact 2/2`
+on btpower and `pass-exact 3/3` on btfmcodec. Anything below is
+a missing-export bug to investigate via Step 7.5.
+
+This forces a **terminology refinement** to the cumulative-
+evidence line on close. The prior "0 EXPORTs cumulative" framing
+literally claimed zero. The load-bearing claim was actually "0
+EXPORTs *missing* vs OEM cumulative" — every sub-wave to date
+had OEM=0 and Ours=0, making the framing degenerate. With 2I:
+
+- OEM total: 5 EXPORTs (across 2 of 4 modules)
+- Ours target: 5 EXPORTs (pass-exact)
+- Missing: 0
+
+So post-2I, the canonical line should read something like:
+
+> **0 missing EXPORTs cumulative.** Evidence: 9 ext-module
+> sub-waves + 14 kernel-internal-already-built + 2
+> techpack-overlay-patched = 28 data points across 3 classes.
+> Cumulative OEM-EXPORT delivery: 5/5 pass-exact. Buffer: 2.
+
+Plan to update WIRE_UP_RECIPE Step 7.10 with this refined
+phrasing on 2I close.
+
+### Iteration budget pre-decision
+
+- **Yellow flag at v6**: pause and run Step 7.8 + Step 7.8b
+  re-checks before continuing tactical fixes.
+- **Step 7.9 escalation at v8** (running max 4 × 2): force
+  bug-class pattern review.
+
+Given the clean 0/6 signature score, I'd predict **v1 or v2
+green** is realistic. If we hit v3 without clearing, that
+itself is a yellow flag for this sub-wave (signature was
+clean → unexpected complexity warrants pause).
+
 ### Status
 
-Prep starting now. First task: identify the 4 bluetooth
-modules from `modules.load` and locate their source trees.
+Prep complete. Ready to write 4 Kbuild+Makefile pairs (or
+rather: ONE TARGET_KERNEL_EXT_MODULES wrapper entry, since
+bt-kernel handles its own internal Kbuild graph). Waiting on
+user confirmation before proceeding to wire-up.
 
 ---
 
