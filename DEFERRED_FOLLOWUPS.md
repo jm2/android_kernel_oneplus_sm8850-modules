@@ -13,6 +13,41 @@ landed (commit hash) or explicitly accepted as won't-do.
 
 ---
 
+## ~~Wire `BOARD_PREBUILT_KERNEL=true` build switch~~
+
+**RESOLVED 2026-05-08** (commit `f1e12df` in
+`device/oneplus/sm8850-common`). The switch landed in
+`BoardConfigCommon.mk` and was verified end-to-end via
+`~/android/iter_brunch_fallback.sh` at fallback_v6_clean: boot.img
+gets the OEM kernel binary, vendor_dlkm.img has 557 modules all
+with OEM vermagic (0 source-built), modules.load 310/310 present.
+ROM zip 2.38 GB, structurally equivalent to the proven April 26
+build.
+
+Three concrete corrections vs the original recipe surfaced during
+implementation, each captured in the commit message:
+- Use `$(COMMON_PATH)`, not `$(LOCAL_PATH)` (LOCAL_PATH unset in
+  BoardConfig context — failed at v3).
+- Must also set `TARGET_FORCE_PREBUILT_KERNEL := true` to flip
+  kernel.mk:248's `FULL_KERNEL_BUILD := true` default to false
+  (without it, source kernel still builds and replaces OEM Image —
+  failed at v2).
+- Keep `TARGET_KERNEL_SOURCE` / `TARGET_KERNEL_CONFIG` set so
+  kernel.mk:140 can derive `TARGET_KERNEL_VERSION` from
+  `$(TARGET_KERNEL_SOURCE)/Makefile` (clearing them broke version
+  detection — failed at v1).
+
+Five iterations to clean (v1-v6). Original effort estimate 1-2 days
+was high; actual implementation ~2 hours including 4 brunch
+iterations, primarily because the three kernel.mk gating layers
+weren't documented in one place.
+
+Phase 6 hardware test is now actionable on this fallback path.
+
+---
+
+(Original entry preserved below for historical context.)
+
 ## Wire `BOARD_PREBUILT_KERNEL=true` build switch
 
 **Surfaced:** 2026-05-02 (Wave 1 close-out review).
