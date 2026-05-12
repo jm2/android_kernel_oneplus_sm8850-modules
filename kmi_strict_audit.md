@@ -590,3 +590,128 @@ blocker. Path B is well-mapped (Wave 2 closeout + Phase 7+) and
 gradually-shippable; Path C is a single large rebase with unknown
 KMI consequences.
 
+---
+
+## Path B'' empirical verdict (2026-05-12, executed)
+
+### Why B'' was needed
+
+The Path B' verdict (zero CRC convergence on 4 flags) was correct but
+narrow. Conclusion-by-elimination from a narrow elimination set is
+unsafe foundation for multi-week Bucket C work. B'' tests a
+comprehensive flag set per the threshold pre-commit:
+
+- **Major convergence (>40% modules flip OR >60% symbols converge)**
+  → debug-config divergence is dominant; scope post-B'' accordingly.
+- **Partial subsystem-clustered convergence** → B'' + targeted Bucket C
+  for non-converging subsystems.
+- **Minor convergence (<10% modules, <20% symbols)** → ACK skew
+  rigorously confirmed as dominant; Path B is the path.
+
+### Method
+
+`production_profile.config` expanded with 13 flag flips covering every
+CRC-affecting CONFIG that differs (or could differ) from OEM's deduced
+production profile:
+
+| Category | Flags |
+|---|---|
+| KASAN-class (B' set) | KASAN, KASAN_HW_TAGS, KASAN_VMALLOC |
+| Sanitizers | UBSAN (+ TRAP/BOUNDS/ARRAY_BOUNDS/LOCAL_BOUNDS) |
+| Slab debug | SLUB_DEBUG, SLAB_FREELIST_HARDENED |
+| Stack | RANDOMIZE_KSTACK_OFFSET, INIT_STACK_ALL_ZERO |
+| CFI | CFI_CLANG (direct OEM evidence: 5/5 sampled `.ko` have 0 `__cfi_check` symbols) |
+| Usercopy | HARDENED_USERCOPY |
+| Allocator sampling | KFENCE |
+| Debug info | DEBUG_INFO_BTF, DEBUG_INFO_BTF_MODULES |
+| Test framework | KUNIT |
+| Attempted but Kconfig-pinned | DEBUG_KERNEL, LIST_HARDENED (couldn't override default y) |
+
+Kernel rebuilt with all flags merged. Module.symvers regenerated
+(shrunk 9992 → 9940 lines: 52 symbols genuinely removed; KUnit/KASAN
+helpers/SCX scheduler externs).
+
+### Empirical result
+
+**Symbol-level Module.symvers diff (dev-baseline vs post-B''):**
+
+| Metric | Count |
+|---|---:|
+| Symbols in common between dev-baseline and B'' | 9,940 |
+| CRC UNCHANGED | 2,388 |
+| **CRC CHANGED** | **7,552** |
+| Symbols removed entirely | 52 |
+| Symbols added | 0 |
+
+**Of the 7,552 CRC-changed symbols:**
+
+| Bucket | Count |
+|---|---:|
+| Not consumed by any OEM module (irrelevant) | 4,554 |
+| Consumed by OEM, new CRC matches OEM | **0** |
+| Consumed by OEM, new CRC still differs | 2,998 |
+
+**Audit verdict transitions:**
+
+| Transition | Boot-loaded modules |
+|---|---:|
+| load-clean → load-fail (REGRESSION) | 19 (all KUnit-test modules) |
+| load-fail → load-clean (UNLOCK) | 0 |
+| Changed verdict within load-fail-* | 0 |
+
+Foundational symbol CRC sample (changed but still ≠ OEM):
+
+| Symbol | dev-baseline | B'' new | OEM expected |
+|---|---|---|---|
+| `module_layout` | `0x21d0f8b0` | `0x38f960dd` ✗ | `0xe976b219` |
+| `__kmalloc_cache_noprof` | `0xe17134b6` | `0x57abd7cf` ✗ | `0x6cc46e45` |
+| `__platform_driver_register` | `0x12db679a` | `0xdda9df08` ✗ | (mismatched in audit; specific OEM value not sampled here) |
+
+### Interpretation
+
+B'' moved a LOT of CRCs around (7,552 / 9,940 ≈ 76% of common symbols
+shifted). About 40% of those (2,998) are OEM-consumed. **Zero of them
+landed on OEM's expected CRC value.** Even the comprehensive
+debug-config flip cannot reach the CRC values OEM's kernel produces.
+
+The flips changed `module_layout` from one wrong value to a different
+wrong value. Same for `__kmalloc_cache_noprof`. The CRC space our
+.config-flipping can reach does not include OEM's value for any
+boot-relevant symbol.
+
+This is the rigorous empirical proof: **the CRC divergence is anchored
+in struct/type definitions at the kernel-source level, not in
+config-driven instrumentation overlay**. ACK patch-level skew between
+our `android16-6.12-2025-06_r8` and OEM's `android16-5-o-g362117606264`
+is the dominant cause. Cannot be addressed by config alone.
+
+### Threshold pre-commit verdict
+
+**Minor convergence with REGRESSIONS** — the lowest of the three
+threshold buckets, and actually worse than B' (which at least didn't
+introduce regressions). **Path B (full source-build of the OEM
+corpus) is the rigorously-established only path.**
+
+### Reverted B'' artifacts
+
+- BoardConfigCommon.mk: production_profile.config wiring REMOVED. The
+  build is back to dev-profile baseline. KUnit modules will load again.
+- production_profile.config: KEPT IN TREE with both B' and B'' result
+  documented in its docstring. Comprehensive flag list preserved as
+  documented dead-end so future agents don't re-test.
+- The minidump_memory.c source patches: KEPT IN TREE (still
+  net-positive — real source-tree #ifdef bug fix).
+
+### What this enables
+
+- **Wave 2 closeout proceeds as Path B.** No remaining gate. The
+  audit's recommendation is now data-anchored, not intuition.
+- **The audit framework is reusable.** `kmi_audit.py --baseline-csv`
+  will be re-run after each Wave 2 sub-wave + each Phase 7+ wave to
+  measure progress toward Phase 6 boot prediction. Today's 19.8%
+  baseline is the starting point; each source-built module that
+  replaces an OEM prebuilt removes one load-fail from the count.
+- **Phase 7+ scope is unambiguous.** The 312 boot-loaded vendor_dlkm
+  modules that fail under the current kernel ALL need source-build.
+  No subset can be canonicalized via config tweaks.
+

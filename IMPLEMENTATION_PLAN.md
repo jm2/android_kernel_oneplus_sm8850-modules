@@ -818,26 +818,61 @@ Wave 2 closeout direction is one of:
   leave the clean ones as KMI-sanctioned prebuilts. Likely the
   realistic outcome.
 
-### 2.5.5 Outcome (2026-05-11)
+### 2.5.5 Outcome (2026-05-11 → 2026-05-12)
 
-**Audit executed.** Result is unambiguously **Path B**:
+**Audit executed; verified through two empirical eliminations.**
 
-1. Initial run: 557/557 OEM vendor_dlkm fail `module_layout` CRC
-   (single-symbol veto). 95/95 system_dlkm pass (GKI-canonical).
-   Phase 6 boot prediction = 19.8%.
-2. Investigation hypothesized two CRC-divergence sources: debug-config
-   divergence (Source 1) and ACK patch-level skew (Source 2).
-3. Path B' attempted: disabled the four debug CONFIGs
-   (KASAN/UBSAN/SLUB_DEBUG/RANDOMIZE_KSTACK_OFFSET), rebuilt kernel,
-   re-audited. **Zero convergence.** No CRCs changed; no modules
-   flipped to load-clean.
-4. Conclusion: Source 1 was wrong. The divergence is entirely
-   Source-2-driven (ACK patch-level skew). Cannot be fixed by config
-   adjustments; full source-build of the OEM corpus is the only path.
+Verification timeline:
 
-See `kmi_strict_audit.md` "Path B' empirical verdict" section for the
-full evidence trail. Wave 2 closeout proceeds as Path B (comprehensive
-source-build).
+1. **Initial audit (2026-05-11):** 557/557 OEM vendor_dlkm fail
+   `module_layout` CRC (single-symbol veto). 95/95 system_dlkm pass
+   (GKI-canonical). Phase 6 boot prediction = 19.8%.
+
+2. **Path B' (2026-05-11):** Disabled 4 debug CONFIGs
+   (KASAN/UBSAN/SLUB_DEBUG/RANDOMIZE_KSTACK_OFFSET). Rebuilt kernel.
+   Re-audited. **Zero CRC changes on 9,988 common symbols.** Only 4
+   symbols removed (KASAN helpers). 0 modules flipped to load-clean.
+   Falsified the narrow debug-config-divergence hypothesis.
+
+3. **Path B'' (2026-05-12):** Comprehensive flag flip per pre-decided
+   protocol (13 flags including CFI_CLANG, HARDENED_USERCOPY,
+   DEBUG_INFO_BTF, KFENCE, KUNIT, SLAB_FREELIST_HARDENED,
+   INIT_STACK_ALL_ZERO, plus the B' set). Rebuilt. Re-audited +
+   direct symbol-level Module.symvers diff. **7,552 of 9,940 common
+   symbols had CRCs change (76% of the surface), but ZERO of them
+   converged to OEM's expected CRC values.** 2,998 OEM-consumed
+   symbols had new wrong CRCs. 19 module regressions (KUnit-tests).
+   0 modules flipped to load-clean.
+
+**Threshold pre-commit verdict: minor convergence with regressions.**
+Path B (full source-build of the OEM corpus) is the rigorously-
+established path forward. Config flipping cannot bridge the OEM CRC
+gap; the divergence is anchored at the kernel-source / ACK-patch
+level.
+
+See `kmi_strict_audit.md` "Path B'' empirical verdict" section for
+the full data. The `production_profile.config` fragment is preserved
+in tree as a documented dead-end so future agents don't re-test.
+
+### 2.5.6 Process artifacts from Phase 2.5 to carry forward
+
+- **`kmi_audit.py --baseline-csv`** is reusable. Re-run after each
+  Wave 2 sub-wave + each Phase 7+ wave; diff CSV measures progress
+  toward Phase-6 boot prediction (today's 19.8% baseline → target
+  approaching 100% as Wave 2 + Phase 7+ source-build progress).
+- **Threshold pre-commit discipline** carried over: before any
+  multi-week commitment, define quantified thresholds for "this is
+  working" vs "abandon" and measure against them empirically rather
+  than judging intuitively.
+- **Comprehensive elimination > narrow elimination.** Path B' tested
+  4 flags; conclusion-by-elimination was unsafe foundation. B''
+  tested 13 flags including direct OEM evidence (CFI_CLANG absence)
+  before committing.
+- **Symbol-level analysis alongside module-level.** Module-level
+  zero-convergence can obscure partial symbol-level convergence;
+  always check both. (B'' surfaced 7552 symbol shifts that
+  module-level missed — and proved they're all to wrong values, which
+  is the load-bearing finding.)
 
 ### 2.5.5 Estimate
 
