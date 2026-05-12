@@ -3736,3 +3736,86 @@ pattern converts "discover deps iteratively at modpost time" to
 
 Sub-wave 2E retrospective complete. Wave 2 closeout direction:
 2G next.
+
+---
+
+## Sub-wave 2G batch-2G-a retrospective (2026-05-12)
+
+### Outcome: 1/1 module clean — recipe-class discovery batch
+
+| Module | Source | Outcome |
+|---|---|---|
+| `msm-eva` | `vendor/qcom/opensource/eva-kernel/msm/eva/*.c` | **clean at v5** — five recipe-class issues surfaced + landed |
+
+`msm-eva.ko` at vermagic `6.12.23-4k-gf3f146a669fc`, 254 __versions.
+
+### Iteration history (5 to green; recipe-class discoveries, not tactical iteration)
+
+| v | Failure mode | Fix |
+|---|---|---|
+| v1 | Kbuild path-doubling: `$(srctree)/$(src)` concatenates to absolute path under ext-module build | Use `$(EVA_ROOT)` (Makefile-defined; same shape as bt-kernel's `$(BT_ROOT)` from 2I) |
+| v2 | `<fastrpc.h>` not found at compile time (CONFIG_EVA_CANOE triggers CVP_FASTRPC_ENABLED via cvp_comm_def.h:57) | Add `-I$(EVA_ROOT)/../dsp-kernel/include/linux/` to canoe block |
+| v2 | `-Werror,-Wformat` on `hfi_response_handler.c:524` (`%d` for `sizeof(...)` size_t) | `ccflags-y += -Wno-error=format` under canoe gate (Step 7.7 OEM-source-toolchain class) |
+| v3 | modpost: 3 fastrpc symbols undefined (frpc-adsprpc.ko ships only as OEM prebuilt; dsp-kernel deferred to Wave 5+) | Step 7.8d bridge: synth_symvers OEM frpc-adsprpc.ko → seed dsp-kernel/Module.symvers + KBUILD_EXTRA_SYMBOLS pointer. **Required extending synth_symvers.py to handle `__kcrctab_gpl` + `__ksymtab_gpl` sections** (frpc-adsprpc uses EXPORT_SYMBOL_GPL exclusively; original tool failed with "no __kcrctab section" error) |
+| v4 | modpost: 3 synx + mmrm symbols undefined (despite synx-kernel + mmrm-driver being source-built peers) | Explicit `KBUILD_EXTRA_SYMBOLS := ...` in Makefile replaces the kernel.mk auto-append; enumerate every needed sibling's Module.symvers |
+| v4 | modpost: 6 eva-internal symbols undefined (`set_pakala_hal_functions`, `set_kaanapali_hal_functions`, 4× `eva_kmd_*`) | Add `eva/target/cvp_{pakala,kaanapali}_hal.o` + `eva/msm_cvp_sw_dbg.o` to msm-eva-objs under canoe gate — `set_*_hal_functions()` are unconditional refs from cvp.c:405-408; `eva_kmd_*` are inside CVP_SW_DBG_BUF_ENABLED blocks which canoe enables |
+| v5 | Make assignment ordering: `msm-eva-objs += ...` in canoe gate ran BEFORE the base `msm-eva-objs := <full list>` (line 71); the `:=` wiped the canoe additions | Move the canoe `msm-eva-objs +=` block to AFTER the base assignment |
+
+### Recipe-class additions surfaced
+
+1. **`synth_symvers.py` GPL-only support.** OEM-built ext-modules
+   frequently use `EXPORT_SYMBOL_GPL` exclusively, putting all entries
+   in `__ksymtab_gpl` + `__kcrctab_gpl`. v1 of the tool only handled
+   the non-GPL variants. Tool patch lands in this commit.
+2. **Make assignment ordering for SoC-conditional obj additions.**
+   `msm-eva-objs += ...` inside an `ifeq` block must come AFTER the
+   base `msm-eva-objs := ...` assignment, since `:=` evaluates
+   immediately and wipes any earlier `+=`. Worth recording as a
+   WIRE_UP_RECIPE Step 7.6 addendum (Make/C asymmetry was already
+   surfaced; this is the Make/Make-ordering subtlety).
+3. **Cross-leaf KBUILD_EXTRA_SYMBOLS enumeration.** When a module
+   sets `KBUILD_EXTRA_SYMBOLS` explicitly, it REPLACES the
+   kernel.mk auto-append. Must enumerate ALL needed siblings,
+   not just the new bridge entries.
+4. **Cascade walk should include kernel-internal #define cascades.**
+   Pre-flight checked deps from BUILD.bazel but missed the
+   cvp_comm_def.h `#ifdef CONFIG_EVA_CANOE` block that triggers
+   CVP_FASTRPC_ENABLED + CVP_SW_DBG_BUF_ENABLED. These cascade-on
+   #defines drag in additional source files + cross-leaf headers
+   that BUILD.bazel doesn't list (only Bazel's `deps`). The
+   vendor_strip_check.py scope should include "grep
+   `#ifdef <CONFIG>` in source-tree to find the inflated source set."
+
+### Phase-6 boot prediction climb (Metric C)
+
+| Snapshot | Source-built overrides | Phase-6 boot prediction |
+|---|---|---|
+| Post-2E close | 191 | 268/389 = 68.9% |
+| **Post-2G-a** | **192** | **269/389 = 69.2%** |
+
+Delta: +1 (msm-eva).
+
+### Step 7.9 escalation status
+
+v5 hits Wave 2's running max of 6 (set by 2I). No Step 7.9
+escalation triggered, but the 5-iteration count is the highest for
+any 2E/2G batch so far. The 5 iterations were each genuine
+recipe-class discoveries, not tactical-fix iteration — the
+convergence signal was clear at every step (each fix advanced
+further into the pipeline). This is the same pattern as 2I:
+"layered surfacing, not novel-class-per-iteration."
+
+### Cumulative-evidence line (Step 7.10 canonical format)
+
+> **Missing EXPORTs: 0 cumulative across all sub-waves.** Buffer: 2.
+> Evidence: 10 ext-module sub-waves + 14 kernel-internal-already-built +
+> 9 techpack-overlay-patched = 33 data points across 3 classes.
+> Per-sub-wave OEM-EXPORT verification: 10/10 sub-waves passing.
+> **Phase-6 boot prediction (Metric C): 69.2% (269/389), +192 vs
+> static baseline, +1 vs post-2E close.**
+
+### Status
+
+Batch-2G-a closed. Next: batch-2G-b (video-driver, two .ko:
+msm_video + video; canoe_video.conf + canoe_video.h exist;
+standard ext-module class).

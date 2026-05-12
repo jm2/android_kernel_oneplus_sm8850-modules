@@ -99,22 +99,32 @@ def find_section_index(sections_list, name):
 
 
 def extract_crc(ko_path, symbol):
-    """Return (crc_u32, is_gpl) for `symbol` in `ko_path`."""
+    """Return (crc_u32, is_gpl) for `symbol` in `ko_path`.
+
+    Handles both regular (`__kcrctab` + `__ksymtab`) and GPL-only
+    (`__kcrctab_gpl` + `__ksymtab_gpl`) exports. Real-world OEM modules
+    often export every symbol via EXPORT_SYMBOL_GPL so this is the
+    common case, not the exception.
+    """
     data = Path(ko_path).read_bytes()
     sections = parse_elf64_sections(data)
 
-    if '__kcrctab' not in sections:
-        raise ValueError(f"{ko_path} has no __kcrctab section "
-                         "(CONFIG_MODULE_REL_CRCS=y kernel required)")
-    if '__ksymtab' not in sections:
-        raise ValueError(f"{ko_path} has no __ksymtab section "
-                         "(no exports)")
+    # Pick the kcrctab + ksymtab variant that exists. Modules can have
+    # one, the other, or both. If both exist we'll fall back later when
+    # the symbol isn't found in the first.
+    has_regular = '__kcrctab' in sections and '__ksymtab' in sections
+    has_gpl = '__kcrctab_gpl' in sections and '__ksymtab_gpl' in sections
+    if not has_regular and not has_gpl:
+        raise ValueError(f"{ko_path} has neither __kcrctab nor "
+                         "__kcrctab_gpl section (no exports, or kernel "
+                         "without CONFIG_MODULE_REL_CRCS)")
 
-    crctab_off, crctab_size = sections['__kcrctab']
+    crctab_off, crctab_size = sections['__kcrctab'] if has_regular else sections['__kcrctab_gpl']
     syms = parse_symbols(data, sections)
 
     # Find the __crc_<symbol> symbol — its `value` is the byte offset
-    # within __kcrctab where the 4-byte CRC lives.
+    # within whichever __kcrctab variant holds it. If we picked the
+    # regular kcrctab but the offset exceeds it, try the GPL variant.
     crc_sym_name = f'__crc_{symbol}'
     crc_offset_in_section = None
     for sname, value, _shndx in syms:
@@ -126,8 +136,17 @@ def extract_crc(ko_path, symbol):
                          f"either {symbol} is not exported by {ko_path}, "
                          "or the kernel was built without MODVERSIONS")
     if crc_offset_in_section + 4 > crctab_size:
-        raise ValueError(f"{symbol}: __crc offset {crc_offset_in_section:#x} "
-                         f"exceeds __kcrctab size {crctab_size:#x}")
+        # If the regular kcrctab was the active one but the offset is
+        # out of range, the symbol is GPL-only — switch to __kcrctab_gpl.
+        if has_regular and has_gpl:
+            crctab_off, crctab_size = sections['__kcrctab_gpl']
+            if crc_offset_in_section + 4 > crctab_size:
+                raise ValueError(f"{symbol}: __crc offset {crc_offset_in_section:#x} "
+                                 f"exceeds both __kcrctab sizes "
+                                 f"({sections['__kcrctab'][1]:#x} / {crctab_size:#x})")
+        else:
+            raise ValueError(f"{symbol}: __crc offset {crc_offset_in_section:#x} "
+                             f"exceeds __kcrctab size {crctab_size:#x}")
 
     crc_u32 = struct.unpack('<I',
                             data[crctab_off + crc_offset_in_section:

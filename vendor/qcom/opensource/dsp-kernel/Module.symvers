@@ -1,0 +1,3 @@
+0x82aa5a1f	fastrpc_driver_register	vendor/qcom/opensource/dsp-kernel/dsp	EXPORT_SYMBOL_GPL	
+0x1cbe1047	fastrpc_driver_unregister	vendor/qcom/opensource/dsp-kernel/dsp	EXPORT_SYMBOL_GPL	
+0x09738786	fastrpc_driver_invoke	vendor/qcom/opensource/dsp-kernel/dsp	EXPORT_SYMBOL_GPL	

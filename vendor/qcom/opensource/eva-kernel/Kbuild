@@ -14,4 +14,14 @@ LINUXINCLUDE    += -I$(srctree)/techpack/eva/include \
 		   -I$(srctree)/techpack/eva/include/uapi/eva
 endif
 
+# Lineage canoe — per-target CONFIG export + LINUXINCLUDE -include
+# (pattern mirrors bt-kernel's CONFIG_ARCH_CANOE gate in Wave 2I).
+# Use $(EVA_ROOT) (defined in Makefile as $(KERNEL_SRC)/$(M)) rather than
+# $(srctree)/$(src) — under ext-module build $(src) is already absolute,
+# so the latter doubles the path.
+ifeq ($(CONFIG_ARCH_CANOE), y)
+include $(EVA_ROOT)/config/canoeeva.conf
+LINUXINCLUDE += -include $(EVA_ROOT)/config/canoeevaconf.h
+endif
+
 obj-y +=msm/

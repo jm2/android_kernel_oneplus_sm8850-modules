@@ -37,6 +37,29 @@ ccflags-y += -I$(EVA_ROOT)/../synx-kernel/msm/synx/ \
     -I$(EVA_ROOT)/../synx-kernel/include/uapi/synx/media/
 endif
 
+# canoe (SM8850) — pineapple+SM8650 patterns plus canoe-specific fixups:
+#   - dsp-kernel/include/linux/ for <fastrpc.h> (canoe enables
+#     CVP_FASTRPC_ENABLED via CONFIG_EVA_CANOE in cvp_comm_def.h)
+#   - -Wno-error=format on OEM hfi_response_handler.c (size_t printed
+#     with %d at line 524; toolchain stricter than OEM's)
+#   - extra source files always-compiled under canoe (the base
+#     msm-eva-objs list above omits them):
+#       eva/target/cvp_{pakala,kaanapali}_hal.o — referenced
+#         unconditionally from cvp.c:405-408 (`set_*_hal_functions()`)
+#       eva/msm_cvp_sw_dbg.o — provides eva_kmd_* symbols referenced
+#         inside the CVP_SW_DBG_BUF_ENABLED-gated blocks (canoe sets
+#         CVP_SW_DBG_BUF_ENABLED=1 via cvp_comm_def.h)
+ifeq ($(CONFIG_ARCH_CANOE), y)
+$(info within KBUILD file CONFIG_ARCH_CANOE = $(CONFIG_ARCH_CANOE))
+KBUILD_CPPFLAGS += -DCONFIG_EVA_CANOE=1 -DCVP_CONFIG_SYNX_V2=1
+ccflags-y += -DCONFIG_EVA_CANOE=1 -DCVP_CONFIG_SYNX_V2=1
+ccflags-y += -I$(EVA_ROOT)/../synx-kernel/msm/synx/ \
+    -I$(EVA_ROOT)/../dsp-kernel/include/ \
+    -I$(EVA_ROOT)/../dsp-kernel/include/linux/ \
+    -I$(EVA_ROOT)/../synx-kernel/include/uapi/synx/media/
+ccflags-y += -Wno-error=format
+endif
+
 
 ifeq ($(CONFIG_EVA_LE), 1)
 ccflags-y += -DCONFIG_EVA_TVM=1
@@ -66,5 +89,21 @@ msm-eva-objs := eva/cvp.o \
 	eva/vm/cvp_vm_main.o \
 	eva/vm/cvp_vm_msgq.o \
 	eva/vm/cvp_vm_resource.o
+
+# canoe-specific obj additions (must come AFTER the base
+# `msm-eva-objs :=` above, since that uses `:=` which would
+# overwrite an earlier `+=`). Three SoC-conditional sources:
+#   target/cvp_pakala_hal.o + target/cvp_kaanapali_hal.o — referenced
+#     unconditionally from cvp.c's set_*_hal_functions() calls
+#     (lines 405-408); compile under canoe's hal_version dispatch.
+#   msm_cvp_sw_dbg.o — provides eva_kmd_* symbols referenced inside
+#     #ifdef CVP_SW_DBG_BUF_ENABLED blocks (canoe sets that define
+#     via cvp_comm_def.h's CONFIG_EVA_CANOE block).
+ifeq ($(CONFIG_ARCH_CANOE), y)
+msm-eva-objs += eva/target/cvp_pakala_hal.o \
+                eva/target/cvp_kaanapali_hal.o \
+                eva/msm_cvp_sw_dbg.o
+endif
+
 obj-m += msm-eva.o
 
