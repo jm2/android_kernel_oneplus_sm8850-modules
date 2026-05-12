@@ -650,6 +650,56 @@ Pair with the closeout retrospective.
 
 ---
 
+## `vendor_strip_check.py` — recursive 7.8b cascade detector
+
+**Surfaced:** 2026-05-11 (2E batch 2 pre-flight; named in
+WIRE_UP_RECIPE.md Step 7.8e).
+
+**Context:**
+The 2E batch 2 prep discovered that the 6 candidate modules' BUILD.bazel
+`deps` lists reference modules that ARE in our source tree but are
+missing both Kconfig stanzas and Makefile `obj-$()` entries — the
+same "techpack-overlay-coupled" pattern as the target module itself,
+recursively. The work estimate for "patch one module" becomes
+"patch N modules" when the cascade is non-trivial. Discovering this
+iteratively at modpost time (one undefined symbol per build cycle)
+is slow and confusing. A static pre-flight check would surface the
+full cascade graph before tactical wire-up starts.
+
+**Concrete tasks:**
+
+1. Build `tools/jm2/vendor_strip_check.py` peer to
+   `dt_consistency_check.py` and `exports_superset_check.py`.
+2. Inputs:
+   - target module path (read its BUILD.bazel `deps`)
+   - kernel tree root (check each dep's source / Kconfig / Makefile presence)
+3. Mode `--single`: per-target one-shot — for each dep, emit the
+   7.8b signature verdict (source_present, kconfig_present,
+   makefile_present, needs_replication).
+4. Mode `--transitive`: recursive walk — for each dep that needs
+   replication, look up ITS deps too, until reaching modules that
+   are fully wired. Output graph + depth per dep.
+5. CSV output: `dep_module, source_present, kconfig_present,
+   makefile_present, needs_replication, recursion_depth,
+   discovered_via`.
+6. Integration: surface in WIRE_UP_RECIPE Step 7.8e as the
+   pre-flight check that converts cascade discovery from
+   "modpost-iteration cost" to "30-second static cost."
+
+**Rationale for deferring:** 2E batch 2's cascade is identified
+already (qcom-amoled-regulator → debug-regulator → proxy-consumer,
+plus the unconsumed peers stub/qpnp-lcdb/qti-fixed). 2E batch 2 will
+patch them manually. The tool's value is for FUTURE sub-waves where
+the cascade is unknown ahead of time — most likely 2G msm
+graphics/video (larger dep trees per module) and Wave 5 WLAN
+(definitely has deep cascades). Building the tool before 2G prep
+is the right pre-flight cost.
+
+**When to revisit:** When 2G prep starts. The pre-2G investment
+pays back across 2G + Wave 5 + remaining Phase 7+ waves.
+
+---
+
 ## Format
 
 To add new entries:

@@ -534,13 +534,16 @@ mechanisms.
 | OEM-Bazel-environment-coupled (Step 7.8 above) | Ext-module trees translated to TARGET_KERNEL_EXT_MODULES | 6+ Bazel-only build assumptions; iteration count exceeds 2× running max without convergence | **Defer** to OEM prebuilt; preserve in-tree build infrastructure for future resumption |
 | OEM-techpack-overlay-coupled (Step 7.8b below) | Kernel-internal drivers under `kernel/oneplus/sm8850/drivers/...` | Source file + Kconfig present, but Makefile in same directory has no `obj-$(CONFIG_X)` entry | **Replicate**: per-module triage — patch Makefile for runtime-active modules; defer OEM-internal/diagnostic-only modules to OEM prebuilt |
 | OEM-prebuilt-sibling-producer (Step 7.8d below) | Source-built consumer references symbols exported by an OEM-prebuilt-only producer (typical when sibling subsystem is deferred to a later wave) | modpost: `undefined! [consumer.ko]`; depmod: `needs unknown symbol` | **Bridge**: synth_symvers (modpost layer) + BOARD_VENDOR_KERNEL_MODULES_DEPMOD_BRIDGE_DIR (depmod layer). Both required. |
+| Vendor-strip cascade (Step 7.8e below) | Recursive application of 7.8b: target module X needs replication AND X's dependency Y *also* needs replication (and possibly Y's deps Z…) | Building X surfaces undefined symbols defined in Y; Y has the same Kconfig-present-Makefile-missing signature as X | **Replicate transitively**: walk the BUILD.bazel `deps` tree, patch every dep that has the 7.8b signature. Work estimate is N-module not 1-module. |
 
-**Three remediation paths emerge: defer / replicate / bridge.**
+**Four remediation paths emerge: defer / replicate / bridge / replicate-transitively.**
 The disposition decision when OEM has build infrastructure we
 don't depends on which class fits and what the cost ratio looks
 like. Don't conflate the classes: a Bazel-coupled module is not
 fixed by a bridge; a prebuilt-sibling is not fixed by replicating
-OEM's Makefile; a techpack-overlay is not fixed by deferral.
+OEM's Makefile; a techpack-overlay is not fixed by deferral; a
+vendor-strip cascade is not fixed by a single-module patch — it
+needs a transitive dep-tree walk.
 
 When a future module is identified as OEM-build-system-coupled,
 classify it into the relevant sub-class. The disposition workflow
@@ -918,6 +921,79 @@ documented. Future sub-waves should expect to use both.
 
 ---
 
+## Step 7.8e — Vendor-strip cascade (recursive 7.8b)
+
+When patching a target module under the OEM-techpack-overlay-coupled
+class (Step 7.8b), the target's BUILD.bazel `deps` list may include
+modules that are themselves missing from the kernel Makefile graph.
+Building the target then surfaces undefined symbols defined in
+not-yet-replicated deps. Patching the target's Makefile alone is
+insufficient; the dep tree itself needs to be walked transitively.
+
+### Surfaced 2026-05-11 during 2E batch 2 pre-flight
+
+`qcom-amoled-regulator.c` consumes `regulator_debug_register` /
+`devm_regulator_debug_register` / etc. from `debug-regulator.ko`.
+Inspecting the kernel tree:
+
+| Module | Source | Kconfig stanza | Makefile entry |
+|---|---|---|---|
+| `qcom-amoled-regulator` | present | absent | absent |
+| `debug-regulator` (its dep per BUILD.bazel) | present | absent | absent |
+| `proxy-consumer` (dep-of-deps for sibling regulators) | present | absent | absent |
+| `stub-regulator` / `refgen` / `qpnp-lcdb-regulator` (other vendor regs) | present | absent | absent |
+
+`canoe_perf.config` references all of `CONFIG_REGULATOR_QCOM_AMOLED`,
+`CONFIG_REGULATOR_DEBUG_CONTROL`, `CONFIG_REGULATOR_PROXY_CONSUMER`,
+etc. as `=m`, but the kernel tree's `drivers/regulator/Kconfig` and
+`drivers/regulator/Makefile` lack the stanzas + obj-$() entries.
+Single-module 7.8b patching on `qcom-amoled-regulator` won't link;
+modpost will surface unresolved imports defined in `debug-regulator.c`
+which itself wouldn't be compiled.
+
+### Detection signature (pre-build, before tactical iteration)
+
+1. Identify the BUILD.bazel `deps` list for the target module.
+2. For each dep, re-run the 7.8b signature check (source-present +
+   Kconfig-present + Makefile-entry-present).
+3. Any dep failing the 7.8b check is part of the cascade.
+4. Iterate: each cascade-member dep has its own `deps` to check.
+
+### Disposition
+
+Walk the cascade graph **before** wire-up; don't discover deps
+iteratively at modpost time. Each cascade-member dep gets the same
+7.8b treatment (Makefile patch and/or Kconfig stanza authoring).
+The work estimate becomes N-module, not 1-module. Document the
+cascade graph in the sub-wave's prep section so the per-module cost
+projection is honest.
+
+### Don't conflate with OEM-prebuilt-sibling-producer (7.8d)
+
+Vendor-strip cascade is "deps exist in our source tree, just not
+wired into the build." 7.8d is "deps don't exist in our source
+tree at all (or are intentionally deferred to a later wave)."
+The remediation differs: cascade = patch source-tree Makefiles
+recursively; sibling-producer = bridge primitives.
+
+### Deferred follow-up — `vendor_strip_check.py`
+
+A static-check tool peer to `dt_consistency_check.py` /
+`exports_superset_check.py`. Inputs: target module source dir
+(read BUILD.bazel deps), kernel tree (check each dep's source/
+Kconfig/Makefile presence). Output: per-dep verdict, plus a
+"transitive walk" mode that recurses through deps-of-deps until
+hitting modules that ARE wired in. CSV format: dep_module,
+source_present, kconfig_present, makefile_present,
+needs_replication, recursion_depth.
+
+Tracked in `DEFERRED_FOLLOWUPS.md` "vendor_strip_check.py — recursive
+7.8b detector". Build it when the next sub-wave hits a multi-leaf
+cascade (likely 2G or Wave 5 WLAN, both of which have larger dep
+trees than 2E batch 2).
+
+---
+
 ## Step 7.9 — Iteration-count escalation as structural-mismatch signal
 
 The 6-row signature in Step 7.8 is best run pre-build, but a
@@ -1063,6 +1139,34 @@ If a future sub-wave introduces a new module class, add a new
 term to the Evidence line (`+ Q Kconfig+Makefile-patched`, etc.)
 and increment `C`. Resist the urge to fold it into an existing
 term unless the class is genuinely the same shape.
+
+### Metric C — Phase-6 boot prediction (added post-Phase-2.5)
+
+Tracks the KMI-strict audit's headline output: "of the modules in
+`modules.load`, what % would load cleanly on cold boot today?" The
+2026-05-11 baseline is **19.8% (77/389)** — all from system_dlkm
+(GKI-canonical); zero vendor_dlkm modules load due to module_layout
+veto. Every source-built module that replaces an OEM prebuilt
+removes one load-fail from the count, climbing the percentage.
+
+**Cadence:** re-run `kmi_audit.py --baseline-csv <prior-csv>` after
+each sub-wave closes (alongside the brunch closeout + retrospective).
+Record the new Phase-6 boot prediction alongside the cumulative
+EXPORT line in the wave status doc.
+
+**Wave 2 closeout target:** climb from 19.8% baseline as 2E batch 2,
+2G, and any other in-flight sub-waves' modules flip from load-fail
+to load-clean (or to excluded-source-built-override once the audit
+tool's `--source-built-corpus` arg is exercised). The delta per
+sub-wave is the load-bearing progress signal.
+
+**Wave 5 + Phase 7+ target:** approach 100%. Anything that remains
+load-fail after all reachable source-builds land becomes Bucket D
+(truly proprietary residual; per-module audit per Plan §11).
+
+This metric is the empirical answer to "are we making progress?"
+that the Phase 2.5 audit was designed to produce. Don't lose it in
+the workflow — re-run after every sub-wave close.
 
 ---
 
