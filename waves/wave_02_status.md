@@ -3466,3 +3466,107 @@ walks needed for both; this is the natural "cascade batch."
 
 2E batch-2c target: qcom-hv-haptics with synth_symvers bridge for
 its OEM-prebuilt oplus_chg_v2 dep.
+
+---
+
+## Sub-wave 2E batch-2b retrospective (2026-05-12)
+
+### Outcome: 2/2 modules clean, 1 cascade-deferred to dedicated sub-wave
+
+| Module | Source | Outcome |
+|---|---|---|
+| `qcom-amoled-regulator` | `drivers/regulator/qcom-amoled-regulator.c` | **clean** — new Kconfig stanza + Makefile entry |
+| `debug-regulator` | `drivers/regulator/debug-regulator.c` | **clean** — new Kconfig stanza + Makefile entry (cascade dep) |
+
+Both verified at vermagic `6.12.23-4k-gf0f9e0f2d6be-dirty`. One brunch
+to green; cascade walk found at pre-flight, not at modpost time.
+
+### qcom_lpm + SCHED_WALT cascade — re-scoped out of batch-2b
+
+The pre-flight for cascade 2 (qcom_lpm) showed the SCHED_WALT
+sub-cascade is materially larger than batch-2b can absorb:
+
+- `kernel/sched/walt/Kconfig` not sourced from any parent → wire up
+- `kernel/sched/walt/Makefile` doesn't exist → create it
+- `sched-walt.ko` per `kernel/sched/walt/modules.bzl`: 24 source files
+  (walt.c + boost.c + sched_avg.c + walt_halt.c + core_ctl.c +
+  trace.c + input-boost.c + sysctl.c + cpufreq_walt.c + fixup.c +
+  walt_lb.c + walt_rt.c + walt_cfs.c + walt_tp.c + walt_config.c +
+  voter.c + walt_cpufreq_cycle_cntr_driver.c +
+  walt_gclk_cycle_counter_driver.c + walt_cycles.c + debugfs.c +
+  pipeline.c + smart_freq.c + walt_storage_lb.c + mvp_locking.c)
+- 4 OEM ext-module deps: `vendor/oplus/kernel/cpu:oplus_bsp_sched_assist`,
+  `:oplus_bsp_frame_boost`, `:cpufreq_bouncing`, `:oplus_bsp_task_overload`
+- 5 `-DCONFIG_OPLUS_FEATURE_*` compile flags
+
+This is a dedicated cpu/scheduler sub-wave's scope, not 2E's. **Re-classifying
+the qcom_lpm work as a new sub-wave (e.g., 2J — cpu/scheduler)** for
+when the WALT cluster gets attention. qcom_lpm OEM prebuilt continues
+to ship; runtime behavioral parity (same WALT, same qcom_lpm built
+against it).
+
+The qcom_lpm Kconfig + Makefile authored in batch-2a remain in tree
+(preserved infrastructure per the calibration discipline — future
+work resumes from there, not from scratch).
+
+### Cascade walk pre-flight value validation
+
+WIRE_UP_RECIPE Step 7.8e called this exact pattern: walking the
+BUILD.bazel `deps` tree before wire-up reveals the cascade depth so
+the agent can scope correctly. For batch-2b:
+
+- Cascade 1 (qcom-amoled-regulator → debug-regulator): depth 1,
+  ~30 min to wire both — fit batch-2b cleanly.
+- Cascade 2 (qcom_lpm → SCHED_WALT → 24 sources + 4 OEM ext-deps):
+  depth 2+, multi-week — does NOT fit batch-2b.
+
+Without the pre-flight, we'd have iteratively discovered cascade 2's
+scope across multiple brunch cycles. The 7.8e static check converted
+the discovery to ~5 minutes of `cat modules.bzl` + Kconfig grep.
+Concrete validation of the recipe addition's value.
+
+### Phase-6 boot prediction climb (Metric C)
+
+| Snapshot | Source-built overrides | Phase-6 boot prediction |
+|---|---|---|
+| Post-2E-2a (2026-05-12) | 189 | 266/389 = 68.4% |
+| **Post-2E-2b (2026-05-12)** | **190** | **267/389 = 68.6%** |
+
+Delta: +1 in modules.load (qcom-amoled-regulator only).
+debug-regulator was built source-side but isn't in modules.load —
+gets loaded as a dep of qcom-amoled-regulator at modprobe time.
+Both `.ko` ship in vendor_dlkm at our vermagic.
+
+The +1-per-batch progression isn't an under-performance; it reflects
+the audit's modules.load-visibility filter. Modules built as deps
+that load transitively don't move the explicit boot count but
+still contribute to a working runtime.
+
+### Iteration count: 1 brunch to green
+
+Same as batch-2a. Two consecutive cascade-aware batches at v1-green.
+Running max for Wave 2 closeout remains v6 (set by 2I's
+multi-layer-bridge effort). Step 7.9 (yellow flag at 2× running max
+= v12) hasn't fired in any 2E batch.
+
+### Cumulative-evidence line (Step 7.10 canonical format)
+
+> **Missing EXPORTs: 0 cumulative across all sub-waves.** Buffer: 2.
+> Evidence: 9 ext-module sub-waves + 14 kernel-internal-already-built +
+> 7 techpack-overlay-patched (2E batch 1: 2 + 2E batch 2a: 3 + 2E
+> batch 2b: 2) = 30 data points across 3 classes.
+> Per-sub-wave OEM-EXPORT verification: 9/9 sub-waves passing.
+> **Phase-6 boot prediction (Metric C): 68.6% (267/389), +190 vs
+> static baseline, +1 vs post-2E-2a.**
+
+### Status
+
+2E batch-2b closed. 2E batch-2c target: qcom-hv-haptics with
+synth_symvers bridge for its OEM-prebuilt `oplus_chg_v2` dep (the
+charger v2 module deferred at 2F.3 per OEM-Bazel-environment-coupled
+class). qcom-hv-haptics is in modules.load (haptics hardware =
+active runtime driver); +1 to Phase-6 boot prediction expected.
+
+After 2E batch-2c, sub-wave 2E closes (clean count: 7 of the original
+6 batch-2 candidates source-built; qcom_lpm correctly re-scoped to
+dedicated cpu/scheduler sub-wave).
