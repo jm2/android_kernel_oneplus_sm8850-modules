@@ -593,15 +593,34 @@ def main(argv):
         print(f"[kmi_audit] Local extension {p}: +{len(local_whitelist) - before} (cum {len(local_whitelist)})",
               file=sys.stderr)
 
+    # Derive the expected source-built vermagic prefix from our kernel build's
+    # kernel.release file. Source-built corpus dirs are typically mixed (the
+    # build's vendor_dlkm install dir contains both source-built .ko and
+    # OEM-prebuilt .ko copied in via BOARD_VENDOR_KERNEL_MODULES); we
+    # vermagic-filter to keep only the ones genuinely built against our kernel.
+    expected_release = ""
+    kernel_release_path = kernel_symvers_path.parent / "include/config/kernel.release"
+    if kernel_release_path.exists():
+        expected_release = kernel_release_path.read_text().strip()
+        print(f"[kmi_audit] Expected source-built vermagic prefix: {expected_release}",
+              file=sys.stderr)
+
     source_built_names: set = set()
+    source_built_skipped_oem = 0
     for d in args.source_built_corpus:
         dp = Path(d)
         if not dp.exists():
             print(f"[kmi_audit] source-built-corpus dir not found: {d}", file=sys.stderr)
             continue
         for ko in dp.rglob("*.ko"):
+            if expected_release:
+                vermagic = parse_modinfo(ko).get("vermagic", "")
+                if not vermagic.startswith(expected_release):
+                    source_built_skipped_oem += 1
+                    continue
             source_built_names.add(ko.stem.replace("-", "_"))
-    print(f"[kmi_audit] Source-built corpus: {len(source_built_names)} unique names",
+    print(f"[kmi_audit] Source-built corpus: {len(source_built_names)} entries "
+          f"(skipped {source_built_skipped_oem} with non-matching vermagic = OEM prebuilts cp'd in)",
           file=sys.stderr)
 
     modules_load_names: set = set()

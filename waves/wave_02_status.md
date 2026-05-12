@@ -3348,3 +3348,121 @@ real per-module rate.)
 ## Wave 2 history (appended as work progresses)
 
 (Filled in as sub-waves land.)
+
+---
+
+## Sub-wave 2E batch-2a retrospective (2026-05-12)
+
+### Outcome: 3/4 modules clean, 1 cascade-deferred to batch-2b
+
+| Module | Source | Outcome |
+|---|---|---|
+| `qcom-vadc-common` | `drivers/iio/adc/qcom-vadc-common.c` | **clean** — Kconfig prompt added; Makefile entry already existed |
+| `qcom-spmi-adc5-gen3` | `drivers/iio/adc/qcom-spmi-adc5-gen3.c` | **clean** — new Kconfig stanza (modeled on QCOM_SPMI_ADC5); new Makefile entry |
+| `qcom-i2c-pmic` | `drivers/mfd/qcom-i2c-pmic.c` | **clean** — Kconfig MFD_I2C_PMIC already existed; new Makefile entry only |
+| `qcom_lpm` (cpuidle governor) | `drivers/cpuidle/governors/qcom-lpm.c` + 2 siblings | **DEFERRED** — SCHED_WALT vendor-strip cascade discovered |
+
+All three clean modules verified at vermagic `6.12.23-4k-ga00d875a5b4c-dirty`
+(our kernel) post-brunch, replacing OEM prebuilts at install time.
+
+### qcom_lpm — first vendor-strip cascade encountered in the wild
+
+Authored Kconfig stanza `CPU_IDLE_GOV_QCOM_LPM` with `depends on
+SCHED_WALT` per ground-truth in `drivers/cpuidle/governors/modules.bzl`.
+Created `drivers/cpuidle/governors/Kconfig` (new file) and sourced it
+from the parent. Authored multi-source Makefile rule
+`qcom_lpm-y := qcom-lpm.o qcom-cluster-lpm.o qcom-lpm-sysfs.o`.
+
+Brunch built clean but our `qcom_lpm.ko` did NOT replace the OEM
+prebuilt — installed copy carries OEM vermagic. Diagnosis:
+`CONFIG_CPU_IDLE_GOV_QCOM_LPM` does not appear in the final `.config`
+because `depends on SCHED_WALT` is unsatisfied. `CONFIG_SCHED_WALT`
+itself isn't in the merged `.config` despite being `=m` in
+`canoe_perf.config`. The symbol vanishes because **`kernel/sched/walt/Kconfig`
+isn't sourced from any parent Kconfig in our tree** — the WALT
+subsystem source files compile via OEM Makefile machinery we don't
+import, but its Kconfig is orphaned. `merge_config.sh` silently
+drops the unrecognized `CONFIG_SCHED_WALT=m` line.
+
+The OEM prebuilt `sched-walt.ko` (5.8 MB) ships via the
+`BOARD_VENDOR_KERNEL_MODULES` wildcard, masking the wire-up gap by
+satisfying runtime consumers from the OEM corpus.
+
+This is the **first encounter with the vendor-strip cascade class
+(WIRE_UP_RECIPE Step 7.8e)** in actual wire-up — the class added to
+the recipe based on the 2E batch 2 pre-flight discovery. Disposition:
+defer qcom_lpm to **batch-2b** alongside the qcom-amoled-regulator
+cascade. Both need transitive 7.8b treatment.
+
+### Phase-6 boot prediction climb (Metric C in WIRE_UP_RECIPE Step 7.10)
+
+| Measurement | Phase-6 boot prediction | Notes |
+|---|---|---|
+| 2026-05-11 baseline (static, OEM corpus only) | 19.8% (77/389) | Audit's `--source-built-corpus` arg wasn't passed |
+| 2026-05-12 post-2E-2a (vermagic-aware) | **68.4% (266/389)** | 189 source-built overrides (186 prior waves + 3 new) + 77 system_dlkm |
+| Remaining Bucket C scope | 123 OEM prebuilts | The actual Phase-6 gate from here |
+
+**Significant correction to baseline framing.** The 19.8% baseline
+was the static "assume all OEM ships unchanged" prediction; the
+actual installed-state prediction was always ~68% because Wave 1 +
+prior Wave 2 sub-waves had already source-built 186 modules that
+overwrite OEM at install time. The audit tool's `--source-built-corpus`
+arg now does vermagic-filtering to surface this honestly — entries
+in the mixed `vendor_dlkm/lib/modules/` install dir are
+vermagic-checked against the kernel's `kernel.release`; only those
+matching count as source-built overrides. This baseline reset is
+the load-bearing metric going forward.
+
+### Iteration count: 1 brunch to green (for 3 of 4)
+
+One brunch invocation produced the 3 clean modules. The qcom_lpm
+cascade was a recipe-class discovery, not a tactical iteration —
+caught at first verification rather than at modpost time, exactly
+the cascade-pre-flight value Step 7.8e is meant to capture.
+
+(The pre-flight done before wire-up DID identify SCHED_WALT as
+qcom_lpm's dep but didn't recursively check whether SCHED_WALT
+itself was wired into our Kconfig graph. That's the kind of
+recursive walk `vendor_strip_check.py` would automate, per the
+deferred followup.)
+
+### Recipe + tool deliverables landed in this sub-wave
+
+- **WIRE_UP_RECIPE Step 7.8e** — Vendor-strip cascade class (commit
+  `c5319716`).
+- **WIRE_UP_RECIPE Step 7.10 Metric C** — Phase-6 boot prediction
+  cadence (re-run kmi_audit after each sub-wave close).
+- **DEFERRED_FOLLOWUPS — vendor_strip_check.py** static cascade
+  detector entry.
+- **kmi_audit.py vermagic-aware `--source-built-corpus`** — corrects
+  the over-counting bug in the v1 tool. Future runs report honest
+  source-built-override counts.
+
+### EXPORT count
+
+- Sub-wave-internal: 0 EXPORT_SYMBOL additions to kernel side.
+- Metric A cumulative (missing EXPORTs across all sub-waves): still 0.
+- Metric B verification (OEM-EXPORT delivery): N/A for this batch
+  (kernel-internal modules don't have OEM-EXPORT comparison via
+  `exports_superset_check`; they're not ext-module class).
+
+### Cumulative-evidence line (Step 7.10 canonical format)
+
+> **Missing EXPORTs: 0 cumulative across all sub-waves.** Buffer: 2.
+> Evidence: 9 ext-module sub-waves + 14 kernel-internal-already-built +
+> 5 techpack-overlay-patched (2E batch 1: 2 + 2E batch 2a: 3) = 28
+> data points across 3 classes.
+> Per-sub-wave OEM-EXPORT verification: 9/9 sub-waves passing (8 at
+> 0/0; 2I at 5/5 pass-exact across btpower + btfmcodec).
+> **Phase-6 boot prediction (Metric C): 68.4% (266/389), +189 vs static
+> baseline, +3 vs prior installed state.**
+
+### Status
+
+2E batch-2a closed. 2E batch-2b authorized to begin: target modules
+= qcom-amoled-regulator (with debug-regulator + proxy-consumer
+cascade) + qcom_lpm (with SCHED_WALT Kconfig wire-up). Cascade
+walks needed for both; this is the natural "cascade batch."
+
+2E batch-2c target: qcom-hv-haptics with synth_symvers bridge for
+its OEM-prebuilt oplus_chg_v2 dep.
