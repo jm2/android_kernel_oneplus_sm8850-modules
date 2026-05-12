@@ -3570,3 +3570,169 @@ active runtime driver); +1 to Phase-6 boot prediction expected.
 After 2E batch-2c, sub-wave 2E closes (clean count: 7 of the original
 6 batch-2 candidates source-built; qcom_lpm correctly re-scoped to
 dedicated cpu/scheduler sub-wave).
+
+---
+
+## Sub-wave 2E batch-2c retrospective (2026-05-12)
+
+### Outcome: 2/2 modules clean — pre-flight class re-classification
+
+| Module | Source | Outcome |
+|---|---|---|
+| `qcom-hv-haptics` | `drivers/input/misc/qcom-hv-haptics.c` | **clean** — new Kconfig + Makefile entry |
+| `qti_battery_charger` | `drivers/power/supply/qti_battery_charger.c` | **clean** — new Kconfig + Makefile entry (cascade dep) |
+
+Both verified at vermagic `6.12.23-4k-g7158abdbb47d-dirty`. One brunch
+to green.
+
+### Hypothesis correction at pre-flight (high-value find)
+
+The earlier batch-2 prep hypothesized that qcom-hv-haptics needed a
+synth_symvers bridge for the OEM-prebuilt `oplus_chg_v2` module
+(charger v2 deferred at 2F.3 as OEM-Bazel-environment-coupled).
+That framing was based on the audit's symbol-overlap match: of
+qcom-hv-haptics's 152 consumed symbols, 2 (`register_hboost_event_notifier`
++ `unregister_hboost_event_notifier`) overlap with OEM oplus_chg_v2's
+exported set, so the audit's name-match approach pointed at
+oplus_chg_v2 as the dep.
+
+**Reality:** those 2 symbols are ALSO exported by
+`drivers/power/supply/qti_battery_charger.c` lines 351 + 357
+(`EXPORT_SYMBOL` declarations explicit in source). The OEM build
+likely has both modules exporting the same symbol; OEM uses
+multi-provider symbol resolution where the loaded module wins. For
+our source-build path, `qti_battery_charger` is in-tree
+techpack-overlay-coupled (Step 7.8b) — same pattern as the
+batch-2a modules. **No bridge needed.**
+
+This is a meaningful win for the audit tool design: the symbol-
+overlap matching in `kmi_audit.py` doesn't know about the in-tree
+SECOND exporter of the same symbol. Future cascade pre-flights
+should grep both `EXPORT_SYMBOL(<symbol>)` across the kernel tree
+in addition to checking OEM module exports — surfaces the
+in-tree producer when one exists.
+
+(Adding to DEFERRED_FOLLOWUPS for `vendor_strip_check.py`'s scope:
+when discovering a cascade dep, the tool should also check whether
+the consumed symbols have an in-tree EXPORT_SYMBOL — that's the
+"is the cascade an in-tree fix vs an OEM-bridge fix" disambiguator.)
+
+### Cascade graph
+
+```
+qcom-hv-haptics  (drivers/input/misc)
+  └── register_hboost_event_notifier / unregister_hboost_event_notifier
+      ↓
+qti_battery_charger  (drivers/power/supply)
+  └── deps: panel_event_notifier, qti_pmic_glink, pdr_interface,
+            qmi_helpers, rproc_qcom_common, qcom_smd/glink_smem/glink,
+            qcom_ipc_logging, minidump, smem, debug_symbol,
+            qcom_dma_heaps, msm_dma_iommu_mapping, mem_buf_dev,
+            secure_buffer, qcom-scm, gh_rm_drv/msgq/dbl, gh_arm_drv
+      ↓
+  ALL leaf deps already wired in-tree (Phase A-F + earlier Wave 2)
+```
+
+Cascade depth = 2 (qcom-hv-haptics → qti_battery_charger → wired leaves).
+All wireable in-tree; no OEM-prebuilt-sibling-producer bridge primitive
+needed. Pure Step 7.8b/7.8e treatment.
+
+### Phase-6 boot prediction climb (Metric C)
+
+| Snapshot | Source-built overrides | Phase-6 boot prediction |
+|---|---|---|
+| Post-2E-2b | 190 | 267/389 = 68.6% |
+| **Post-2E-2c** | **191** | **268/389 = 68.9%** |
+
+Delta: +1 in modules.load (qcom-hv-haptics only). qti_battery_charger
+loads as transitive dep at modprobe time (same pattern as
+debug-regulator in batch-2b).
+
+### Iteration count: 1 brunch to green
+
+Three consecutive batches at v1-green (2a, 2b, 2c). Running max for
+Wave 2 closeout remains v6 (2I). Step 7.9 escalation (2× running
+max = v12) has never fired in any 2E sub-batch — the cascade-walk
+discipline is paying off as expected.
+
+### Cumulative-evidence line (Step 7.10 canonical format)
+
+> **Missing EXPORTs: 0 cumulative across all sub-waves.** Buffer: 2.
+> Evidence: 9 ext-module sub-waves + 14 kernel-internal-already-built +
+> 9 techpack-overlay-patched (2E batch 1: 2 + 2E batch 2a: 3 + 2E
+> batch 2b: 2 + 2E batch 2c: 2) = 32 data points across 3 classes.
+> Per-sub-wave OEM-EXPORT verification: 9/9 sub-waves passing.
+> **Phase-6 boot prediction (Metric C): 68.9% (268/389), +191 vs
+> static baseline, +1 vs post-2E-2b.**
+
+### Status
+
+Sub-wave 2E batch-2c closed.
+
+---
+
+## Sub-wave 2E close-out (2026-05-12)
+
+### Aggregate outcome across batch 1 + batch 2a/2b/2c
+
+| Module | Batch | Outcome |
+|---|---|---|
+| `qcom_glink_spss` | 1 | clean |
+| `qcom_spss` | 1 | clean |
+| `qcom-vadc-common` | 2a | clean |
+| `qcom-spmi-adc5-gen3` | 2a | clean |
+| `qcom-i2c-pmic` | 2a | clean |
+| `qcom-amoled-regulator` | 2b | clean |
+| `debug-regulator` | 2b | clean (cascade dep) |
+| `qcom-hv-haptics` | 2c | clean |
+| `qti_battery_charger` | 2c | clean (cascade dep) |
+| `qcom_lpm` | 2a → re-scoped | DEFERRED to sub-wave 2J (cpu/scheduler) |
+
+**Original 2E scope:** ~25 qcom_qti candidates. **Final source-built
+count:** 14 already-built kernel-internal + 9 patched in 2E = 23 of
+25. The 2 deferrals:
+- `qcom_lpm` → dedicated cpu/scheduler sub-wave 2J (SCHED_WALT cascade
+  is 24-source-file + 4-OEM-ext-dep scope; behavioral parity preserved
+  by shipping OEM prebuilt against OEM SCHED_WALT)
+- `qcom-vadc-common`'s deferred siblings (qcom_cpuss_sleep_stats_v4,
+  qcom_dynamic_ramoops, qcom_iommu_debug) → diagnostic-only modules;
+  OEM prebuilt fine; per the pre-decided disposition table in the
+  2E prep section.
+
+### Phase-6 boot prediction at sub-wave close
+
+| Snapshot | Phase-6 boot prediction |
+|---|---|
+| 2026-05-11 baseline (naive) | 19.8% (77/389) |
+| 2026-05-12 honest installed-state baseline | 67.6% (263/389) |
+| Post-2E-2a | 68.4% (266/389) |
+| Post-2E-2b | 68.6% (267/389) |
+| **Post-2E close** | **68.9% (268/389)** |
+
+Wave 2 closeout direction: 2G (msm graphics/video) remaining. Plus
+deferred items (qcom_lpm → sub-wave 2J; charger v2 → OEM-Bazel-coupled
+follow-up). Phase 7+ scope is the 121 OEM-prebuilt-only modules in
+modules.load.
+
+### Step 7.8e validation across sub-wave 2E
+
+Three batches with cascade pre-flight:
+- batch-2a (no cascade): wire-up direct → clean at v1
+- batch-2b (depth-1 cascade): pre-flight identified → both wired together → clean at v1
+- batch-2c (depth-2 cascade + hypothesis correction): pre-flight identified the wrong dep (oplus_chg_v2) but the actual in-tree dep (qti_battery_charger) was discovered via `EXPORT_SYMBOL` grep → both wired → clean at v1
+
+Concrete validation: 3-for-3 clean cascade walks. The Step 7.8e
+pattern converts "discover deps iteratively at modpost time" to
+"discover statically in 5 minutes." Recipe value validated.
+
+### Recipe + tool deliverables from sub-wave 2E
+
+- **Step 7.8e** (vendor-strip cascade class) — landed.
+- **Step 7.10 Metric C** (Phase-6 boot prediction cadence) — landed.
+- **DEFERRED_FOLLOWUPS — vendor_strip_check.py** — scope expanded to
+  include in-tree EXPORT_SYMBOL grep for cascade-dep discrimination.
+- **kmi_audit.py vermagic-aware `--source-built-corpus`** — bug fix
+  in batch-2a; correct installed-state Phase-6 prediction now.
+
+Sub-wave 2E retrospective complete. Wave 2 closeout direction:
+2G next.
