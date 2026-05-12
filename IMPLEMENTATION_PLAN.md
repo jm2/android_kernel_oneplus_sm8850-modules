@@ -714,3 +714,219 @@ buffer for the Phase 0 / Phase 3 surprises.
 ---
 
 *End of plan. Updates appended below as work progresses.*
+
+---
+
+## Phase 2.5 — KMI-strict audit (inserted 2026-05-11)
+
+Inserted after Wave 2 sub-wave 2I closeout and a failed Phase-6 flash
+attempt. The flash failure was a *mechanics* problem (`fastboot
+wipe-super` left the device in a state where basic-fastboot can't see
+dynamic partitions; fastbootd unavailable on this hardware), NOT a
+ROM-content problem. The recovery exposed that the A/B/A' decision
+about how much Bucket C work is required before Phase 6 has been
+running on intuition rather than data.
+
+The original May 7 flash-safety audit identified "KMI-strict audit"
+as a Track 2 deliverable; it was deferred and never executed. This
+phase makes it a discrete gate before Wave 2 closeout continues.
+
+### 2.5.1 Goal
+
+Measure, per OEM-prebuilt `.ko`, how loadable it is against our
+post-Phase-1 KMI-canonicalized kernel. Translate the result into a
+realistic Phase 6 boot prediction and a Bucket-C-scope decision.
+
+### 2.5.2 Scope
+
+For each of the **557** `.ko` in `device/oneplus/infiniti-kernel/`
+(and the 79 in `system_dlkm/lib/modules/`):
+
+1. Extract `__versions` (consumed-symbol + CRC pairs). Re-uses the
+   parser in `tools/jm2/kmod_validate.py`.
+2. CRC-match each `__versions` symbol against our kernel's
+   `out/.../KERNEL_OBJ/Module.symvers` (the authoritative
+   post-Phase-1 canonicalized-CRC manifest, 9,992 lines).
+3. Per-module verdict:
+   - **load-clean** — every `__versions` symbol resolves with matching
+     CRC. Module will load.
+   - **load-fail-crc** — symbol present in our `Module.symvers` but
+     CRC differs (struct-layout / signature divergence).
+   - **load-fail-missing** — symbol absent from our `Module.symvers`
+     (vendor-internal symbol we don't export at all).
+   - **excluded-source-built-override** — a source-built `.ko` of the
+     same name exists in our build output; OEM prebuilt won't be
+     installed.
+4. Cross-reference with the KMI whitelist
+   (`android/abi_gki_aarch64_oneplus_15` + `_extras` =
+   12,049 symbols) to classify each consumed symbol as
+   "intended-KMI" vs "vendor-internal."
+5. Distinguish "in `modules.load`" (boot-loaded) vs "ships but
+   doesn't load" — only the former are MVB-blocking.
+6. Special check: `module_layout` CRC match. Per Plan §1.2 this is
+   the single most critical symbol; if mismatched, NO module loads
+   regardless of any other consideration.
+
+### 2.5.3 Deliverables
+
+- `tools/jm2/kmi_audit.py` — reusable, re-runnable audit tool.
+  Inputs: OEM .ko corpus dirs, our Module.symvers, whitelists.
+  Outputs: per-module CSV + aggregate tables.
+- `kmi_strict_audit.md` (top-level in this repo) — analysis doc.
+  Contents:
+  1. **Distribution table** — count per verdict bucket (the four
+     above + their breakdown by in-modules.load yes/no).
+  2. **Per-subsystem breakdown** — count per verdict by subsystem
+     cluster (audio, display, GPU, WLAN, charger, sensors,
+     touch, BT, network, etc.). Surfaces which subsystems boot
+     cleanly vs which are vendor-heavy.
+  3. **High-leverage canonicalization extensions list** — vendor-
+     internal symbols ranked by reference count across the
+     load-fail-missing cohort. If N modules all reference the
+     same 5 vendor symbols, extending the union whitelist to
+     those 5 unlocks N modules at one cost.
+  4. **Phase 6 boot prediction** — given the verdict distribution,
+     what % of `modules.load` would load on cold-boot today?
+     Per-subsystem readiness verdicts.
+  5. **Bucket C scope recommendation** — what subset of the
+     load-fail cohort is genuinely MVB-blocking (must be
+     source-built before Phase 6) vs deferrable to Phase 7+
+     (already loads via canonicalization or is non-critical).
+- `kmi_audit_<date>.csv` baseline — one row per OEM .ko, peer to
+  the existing `~/android/baseline_csv/oem_prebuilts.csv` but
+  with CRC-level verdicts instead of vermagic-only verdicts.
+
+### 2.5.4 Gating
+
+This phase **gates Wave 2 closeout continuation** (2E batch 2 / 2G /
+2F.3 retry / Wave 2 release-candidate tagging). The audit converts
+the next-step decision from intuition-based to data-based.
+
+Wave 2 closeout direction is one of:
+
+- **Path A (audit shows mostly load-clean)** — Phase 6 hardware test
+  is unblocked now; targeted canonicalization extensions cover the
+  small load-fail cohort; Bucket C source-build work is incremental
+  enhancement rather than MVB-blocking. Wave 2 closeout finishes
+  the in-flight sub-waves and tags release-candidate.
+- **Path B (audit shows mostly load-fail)** — Bucket C source-build
+  is genuinely required before Phase 6. The comprehensive close-out
+  plan (Wave 2 batch-2a/2b/2c cascade + Wave 5 WLAN + dsp/spu/oplus
+  tail) proceeds as full Phase 7+ scope, weeks-to-months effort.
+- **Path A' (mixed: some clean subsystems, some vendor-heavy)** —
+  targeted Bucket C: source-build the vendor-heavy subsystem(s),
+  leave the clean ones as KMI-sanctioned prebuilts. Likely the
+  realistic outcome.
+
+### 2.5.5 Outcome (2026-05-11)
+
+**Audit executed.** Result is unambiguously **Path B**:
+
+1. Initial run: 557/557 OEM vendor_dlkm fail `module_layout` CRC
+   (single-symbol veto). 95/95 system_dlkm pass (GKI-canonical).
+   Phase 6 boot prediction = 19.8%.
+2. Investigation hypothesized two CRC-divergence sources: debug-config
+   divergence (Source 1) and ACK patch-level skew (Source 2).
+3. Path B' attempted: disabled the four debug CONFIGs
+   (KASAN/UBSAN/SLUB_DEBUG/RANDOMIZE_KSTACK_OFFSET), rebuilt kernel,
+   re-audited. **Zero convergence.** No CRCs changed; no modules
+   flipped to load-clean.
+4. Conclusion: Source 1 was wrong. The divergence is entirely
+   Source-2-driven (ACK patch-level skew). Cannot be fixed by config
+   adjustments; full source-build of the OEM corpus is the only path.
+
+See `kmi_strict_audit.md` "Path B' empirical verdict" section for the
+full evidence trail. Wave 2 closeout proceeds as Path B (comprehensive
+source-build).
+
+### 2.5.5 Estimate
+
+Tooling + analysis: 1–2 days. Re-runnable after each
+canonicalization extension (whitelist additions, kernel-side
+EXPORT additions) to measure progress objectively.
+
+### 2.5.6 Process
+
+Standalone sub-deliverable parallel to the Wave 2 sub-wave pattern:
+pre-flight the tool shape, run the analysis, produce
+`kmi_strict_audit.md`, then revisit the Wave 2 closeout plan with
+data. Retrospective lands in the audit doc itself rather than in
+`wave_02_status.md` (this isn't a Wave 2 sub-wave).
+
+---
+
+## Wave 2 closeout direction (post-2I, 2026-05-11) — paused at Phase 2.5
+
+Captured here so the *intended* close-out is in the git-controlled
+record even though execution is paused pending the Phase 2.5 audit.
+
+### Goal
+
+Wave 2 closeout: comprehensive source-build of all modules in scope
+unless a fundamental structural blocker prevents it (the
+OEM-Bazel-environment-coupled class identified in 2F.3 is the
+operational definition of "fundamental"). Then re-assess the OEM
+prebuilt remainder for Bucket C / Bucket D disposition.
+
+### Remaining Wave 2 sub-waves (pre-audit baseline)
+
+| Sub-wave | Scope | Class | Status |
+|---|---|---|---|
+| **2E batch 2** | 6 modules: `qcom-vadc-common`, `qcom-i2c-pmic`, `qcom-spmi-adc5-gen3`, `qcom_lpm`, `qcom-amoled-regulator`, `qcom-hv-haptics` | Kernel-internal Kconfig+Makefile (vendor-strip cascade) | on hold pending audit |
+| **2G** | ~11 modules: `msm_kgsl`, `msm-eva`, `msm_video` | TBD (ext-module vs kernel-internal — Step 7.8 6-row signature at prep) | not started |
+| **2F.3 retry** | charger v2 (~153 .c files) | OEM-Bazel-environment-coupled (deferred at v14); structural couplings would need to be patched | optional / lowest priority |
+
+### Discovered dependency cascade (2026-05-11)
+
+2E batch 2 pre-flight surfaced that the 6 candidates have hidden
+cascade deps. `canoe_perf.config` sets `CONFIG_REGULATOR_DEBUG_CONTROL=m`,
+`CONFIG_REGULATOR_PROXY_CONSUMER`, `CONFIG_REGULATOR_STUB`,
+`CONFIG_REGULATOR_QPNP_LCDB`, `CONFIG_REGULATOR_QTI_FIXED_VOLTAGE`
+but none of these have Kconfig/Makefile entries in the kernel tree —
+classic vendor-strip Makefile holes from the original Phase A. So
+the actual comprehensive 2E batch 2 closeout is closer to **10–12
+modules** than 6, with `qcom-hv-haptics` additionally needing the
+2I `synth_symvers` bridge for its OEM-prebuilt `oplus_chg_v2` dep.
+
+This cascade is exactly the kind of finding the KMI-strict audit
+should *measure* rather than chase blindly. If the audit shows
+`qcom-amoled-regulator`'s deps are load-clean via canonicalization,
+the cascade work isn't MVB-blocking.
+
+### Phase 7+ scope (Bucket C stretch, beyond Wave 2 MVB)
+
+Per `README.md` "remaining vendor subsystems still come from prebuilt
+for now":
+
+- **Wave 5 — WLAN** (`wlan/platform` + `wlan/qcacld-3.0`):
+  `cnss2`, `cnss_nl`, `wlan_firmware_service`, `qca_cld3_wlan`.
+  Plan §5.1 calls this "hairiest single subsystem"; was deferred
+  from Wave 2.
+- **dsp-kernel** — `spf_core`, `audio_q6`, etc. Audio DSP.
+- **spu-kernel** — `spcom`, `spss_utils`, etc. Secure processor.
+- **`oplus/*` tail** — everything in `vendor/oplus/kernel/` not yet
+  covered.
+
+Then the residual is Bucket D — truly proprietary modules with no
+source. Per Plan §11, each gets a per-module audit: KMI-clean →
+keep as prebuilt, non-KMI → FORCE_LOAD with documented audit OR
+accept feature loss.
+
+### Sequencing (post-audit)
+
+After Phase 2.5 audit lands:
+
+1. **Wave 2 closeout** — execute remaining sub-waves at the scope
+   the audit recommends.
+2. **Wave 2 release-candidate** — tags on three jm2 forks; brunch
+   closeout verifying full ROM passes Phase 2 validators.
+3. **Phase 6 hardware flash test** — first attempt with the
+   genuinely-MVB-ready ROM. Method-B path (basic-fastboot only)
+   per Phase-6 flash recovery findings (fastbootd not available on
+   this device).
+4. **Phase 7+ Bucket C** — paced waves per the recipe; each closes
+   with a re-run of the kmi_audit tool to measure progress.
+5. **Phase 8 — Bucket D** — final irreducible residual.
+
+---
+
