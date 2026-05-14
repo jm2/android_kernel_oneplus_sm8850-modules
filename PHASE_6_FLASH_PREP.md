@@ -42,23 +42,48 @@ done this exactly once (May 7); we don't repeat it.
    available; we cannot recover from `super_empty.img` alone.
 
    **Build the complete super.img with the Lineage ROM's per-
-   partition images via `lpmake`:**
+   partition images via `lpmake`.**
 
-   ```
-   # Inside the LineageOS build tree:
-   out/host/linux-x86/bin/lpmake \
+   Note: `system.img`, `system_ext.img`, and `product.img` are Android
+   sparse images (their on-disk byte count is the compressed size, not
+   the partition size). lpmake's `--partition <name>:readonly:<size>:<group>`
+   requires the UNSPARSED size. `vendor.img`, `vendor_dlkm.img`,
+   `odm.img`, and `system_dlkm.img` are raw EROFS; their on-disk size
+   IS the partition size. The `img_size` shell helper below auto-
+   detects + emits the correct size for either case.
+
+   First-time build verified 2026-05-14 against the post-2G-c MVB
+   ROM (kernel `6.12.23-4k-gf3f146a669fc`). Output landed at
+   `out/target/product/infiniti/super.img` so it ships alongside
+   the boot stack for the basic-fastboot flash sequence.
+
+   ```bash
+   cd /home/jmulesa/android/lineage/out/target/product/infiniti
+
+   img_size() {
+     local f="$1"
+     if file "$f" | grep -q "Android sparse"; then
+       /home/jmulesa/android/lineage/out/host/linux-x86/bin/simg2img "$f" /tmp/__s.img 2>/dev/null
+       stat -c %s /tmp/__s.img
+       rm -f /tmp/__s.img
+     else
+       stat -c %s "$f"
+     fi
+   }
+
+   /home/jmulesa/android/lineage/out/host/linux-x86/bin/lpmake \
      --device-size 15032385536 \
      --metadata-size 65536 \
      --metadata-slots 3 \
      --group oneplus_dynamic_partitions_a:7515999232 \
      --group oneplus_dynamic_partitions_b:7515999232 \
-     --partition system_a:readonly:$(stat -c %s system.img):oneplus_dynamic_partitions_a --image system_a=system.img \
-     --partition system_ext_a:readonly:$(stat -c %s system_ext.img):oneplus_dynamic_partitions_a --image system_ext_a=system_ext.img \
-     --partition product_a:readonly:$(stat -c %s product.img):oneplus_dynamic_partitions_a --image product_a=product.img \
-     --partition vendor_a:readonly:$(stat -c %s vendor.img):oneplus_dynamic_partitions_a --image vendor_a=vendor.img \
-     --partition vendor_dlkm_a:readonly:$(stat -c %s vendor_dlkm.img):oneplus_dynamic_partitions_a --image vendor_dlkm_a=vendor_dlkm.img \
-     --partition odm_a:readonly:$(stat -c %s odm.img):oneplus_dynamic_partitions_a --image odm_a=odm.img \
-     --partition system_dlkm_a:readonly:$(stat -c %s system_dlkm.img):oneplus_dynamic_partitions_a --image system_dlkm_a=system_dlkm.img \
+     --partition system_a:readonly:$(img_size system.img):oneplus_dynamic_partitions_a --image system_a=system.img \
+     --partition system_ext_a:readonly:$(img_size system_ext.img):oneplus_dynamic_partitions_a --image system_ext_a=system_ext.img \
+     --partition product_a:readonly:$(img_size product.img):oneplus_dynamic_partitions_a --image product_a=product.img \
+     --partition vendor_a:readonly:$(img_size vendor.img):oneplus_dynamic_partitions_a --image vendor_a=vendor.img \
+     --partition vendor_dlkm_a:readonly:$(img_size vendor_dlkm.img):oneplus_dynamic_partitions_a --image vendor_dlkm_a=vendor_dlkm.img \
+     --partition odm_a:readonly:$(img_size odm.img):oneplus_dynamic_partitions_a --image odm_a=odm.img \
+     --partition system_dlkm_a:readonly:$(img_size system_dlkm.img):oneplus_dynamic_partitions_a --image system_dlkm_a=system_dlkm.img \
      --partition system_b:readonly:0:oneplus_dynamic_partitions_b \
      --partition system_ext_b:readonly:0:oneplus_dynamic_partitions_b \
      --partition product_b:readonly:0:oneplus_dynamic_partitions_b \
@@ -68,19 +93,34 @@ done this exactly once (May 7); we don't repeat it.
      --partition system_dlkm_b:readonly:0:oneplus_dynamic_partitions_b \
      --virtual-ab \
      --sparse \
-     --output /tmp/lineage_super_<date>.img
+     --output super.img
    ```
 
-   **Verify with `lpdump`:**
+   Expected stdout: per-partition "resize from 0 bytes to <N> bytes"
+   info lines (one per partition_a). The "Invalid sparse file format
+   at header magic" messages are informational — lpmake probes each
+   `--image` for sparse-ness and falls through to raw read; the EROFS
+   images legitimately aren't sparse.
 
-   ```
-   simg2img /tmp/lineage_super_<date>.img /tmp/lineage_super_<date>.img.raw
-   lpdump /tmp/lineage_super_<date>.img.raw
+   **Verify with `lpdump`** (super.img is sparse so unsparse first):
+
+   ```bash
+   /home/jmulesa/android/lineage/out/host/linux-x86/bin/simg2img \
+     super.img /tmp/super_unsparsed.img
+   /home/jmulesa/android/lineage/out/host/linux-x86/bin/lpdump \
+     /tmp/super_unsparsed.img
+   rm /tmp/super_unsparsed.img
    ```
 
-   Expected output: metadata version 10.2, 3 slots, `virtual_ab_device`
-   flag, group `oneplus_dynamic_partitions_a/b`, partitions populated
-   in slot _a with non-zero extents.
+   Expected lpdump output:
+   - `Metadata version: 10.2`
+   - `Metadata slot count: 3`
+   - `Header flags: virtual_ab_device`
+   - All 7 partitions (system, system_ext, product, vendor,
+     vendor_dlkm, odm, system_dlkm) present as `<name>_a` with
+     non-zero `Extents` lines and `Group: oneplus_dynamic_partitions_a`
+   - Mirror partitions `<name>_b` present, empty extents (slot _b
+     placeholders for the A/B-OTA mechanism)
 
 2. **Verified-working LineageOS recovery.**
    Recovery image (`recovery.img`) from the same build artifact set.
@@ -227,7 +267,7 @@ A staged, recoverable flash sequence:
 
 4. **super (single full-image flash — covers all dynamic partitions):**
    ```
-   fastboot flash super /tmp/lineage_super_<date>.img
+   fastboot flash super out/target/product/infiniti/super.img
    ```
 
    This is THE step that requires the pre-built super.img. Without
