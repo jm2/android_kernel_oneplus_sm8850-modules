@@ -4041,3 +4041,143 @@ Phase 7+ Bucket C scope (post-Wave-2) remains:
 The 118 remaining `load-fail-module-layout` modules in modules.load
 are the Phase-7+ scope. ROM-wise Wave 2 is effectively closed at
 69.7% boot prediction.
+
+---
+
+## Wave 2 closeout retrospective (2026-05-13)
+
+### Outcome — Wave 2 is closed
+
+11 sub-waves landed across Wave 2 (2A + 2A.5 + 2C + 2D + 2E batches
+1/2a/2b/2c + 2F.1 + 2F.2 + 2G batches a/b/c + 2H + 2I). One sub-wave
+(2F.3 charger v2) deferred with a final principled disposition —
+see "2F.3 disposition closure" below.
+
+Phase-6 boot prediction climbed from a naive **19.8% (77/389)**
+baseline to a measured **69.7% (271/389)** at Wave 2 close.
+
+### Phase-6 boot prediction trajectory
+
+| Snapshot | Phase-6 prediction |
+|---|---|
+| 2026-05-11 naive baseline (audit's static prediction) | 19.8% (77/389) |
+| 2026-05-12 honest baseline post-vermagic-fix | 67.6% (263/389) |
+| Post-2E close | 68.9% (268/389) |
+| Post-2G-a | 69.2% (269/389) |
+| Post-2G-b | 69.4% (270/389) |
+| **Wave 2 close (post-2G-c)** | **69.7% (271/389)** |
+
+### Recipe + tool institutional artifacts landed in Wave 2
+
+The WIRE_UP_RECIPE accreted significantly. Canonical step list at
+Wave 2 close:
+
+- Steps 1–6: BUILD.bazel → Kbuild + Makefile + Kconfig translation
+- Step 7 / 7.5: validate_module.sh + nm undefined-refs check
+- Step 7.6: Make/C asymmetry (`=m` Make-side without C-side `=1`)
+- Step 7.7: OEM-source `-Werror=...` toolchain class
+- Step 7.8 + 7.8a–e: OEM-build-system-coupling class taxonomy with
+  4 remediation paths (defer / replicate / bridge / replicate-
+  transitively)
+- Step 7.8c: Name-collision-pass-exact false-positive (modinfo
+  description match mandatory)
+- Step 7.9: Iteration-count escalation rule
+- Step 7.10: Cumulative-evidence canonical format
+  (Metric A / B / C — missing-EXPORTs / per-sub-wave verification /
+  Phase-6 boot prediction)
+
+Reusable tools:
+- `tools/jm2/kmi_audit.py` — Phase-6 boot prediction tracker
+  (delta-renderable; vermagic-aware source-built filtering)
+- `tools/jm2/synth_symvers.py` — Step 7.8d bridge primitive
+  (handles regular / GPL-only / mixed-export OEM kcrctab layouts
+  after Wave 2's three extensions)
+- `tools/jm2/exports_superset_check.py`, `dt_consistency_check.py`,
+  `kmod_validate.py` — from earlier phases, exercised at scale
+  through Wave 2
+
+### 2F.3 disposition closure (final, not TBD)
+
+Sub-wave 2F.3 (charger v2) was deferred at v14 with explicit
+documented reason: **6-dimension structural mismatch against OEM's
+Bazel build environment** (generated headers from JSON via
+`scripts/ic_cfg_parse.py`, name-override semantics, local_defines
+not surfaced via canoeautoconf.h, symlinks to non-existent
+`kernel_platform/common/...` paths, multi-ext-module cascade for
+just charger v2 to link, custom linker script + `Makefile.json-build`
+codegen).
+
+The 2F.3 retrospective stated:
+> *Resume conditions: a future engineering investment in replicating
+> OEM's Bazel environment paths becomes worthwhile — e.g.,
+> upstreaming, security audit, multi-device port.*
+
+**None of those resume conditions hold today.** The 6-dimension
+structural coupling documented at v14 is unchanged by any tool/recipe
+work landed since.
+
+**Final disposition (closed, not TBD):** charger v2 ships as OEM
+prebuilt `oplus_chg_v2.ko` via `BOARD_VENDOR_KERNEL_MODULES`. The
+in-tree build infrastructure (`vendor/oplus/kernel/charger/{config,
+test-kit,v2}/` Kbuild + Makefile + generated-headers wiring) remains
+in tree as preserved scaffolding for any future resumption that
+meets the resume conditions. `TARGET_KERNEL_EXT_MODULES` entries
+stay commented out in `BoardConfigCommon.mk`.
+
+**This is the disposition.** 2F.3 is not "open" or "TBD" in future
+status docs. If one of the resume conditions materializes, a new
+sub-wave (e.g., 2F.3-retry-<date>) opens with an explicit charter;
+otherwise the OEM prebuilt continues to ship.
+
+### Other Wave 2 deferrals — closed dispositions
+
+- **qcom_lpm + SCHED_WALT → dedicated sub-wave 2J.** SCHED_WALT's
+  24-source-file + 4-OEM-ext-dep cascade is its own sub-wave;
+  not Wave 2 scope. **Disposition: dedicated sub-wave 2J, gated on
+  Phase 6 data**.
+- **qcom_cpuss_sleep_stats_v4 / qcom_dynamic_ramoops /
+  qcom_iommu_debug** (2E pre-decided diagnostic-only defers).
+  **Disposition: closed (OEM prebuilt ships)**.
+- **16 runtime-effective-no-op touch leaves (2D)** + 1 obvious-stub
+  (2H rf_cable_monitor). **Disposition: closed (modules ship but
+  bind no canoe DT node; OEM ships them too for build-graph
+  completeness)**. `noop_modules.md` documents the class; potential
+  vendor_dlkm slimming as a post-Phase-6 cleanup is a separate
+  optimization, not a Wave 2 closeout requirement.
+
+### Post-Wave-2 scope (Phase 7+, gated on Phase 6 hardware test)
+
+Per `IMPLEMENTATION_PLAN.md` §10. **Gated on Phase 6 runtime data**
+— the audit's static prediction tells us which modules would load
+clean; Phase 6 dmesg/logcat tells us which are load-bearing for
+boot vs already-degraded-gracefully. Scope decisions for the items
+below should be informed by that data, not speculated:
+
+| Sub-wave | Scope | Estimate |
+|---|---|---|
+| Sub-wave 2J — cpu/scheduler | qcom_lpm + SCHED_WALT + 4 OEM ext-deps | weeks |
+| Wave 5 — WLAN | cnss2, cnss_nl, wlan_firmware_service, qca_cld3_wlan | weeks-months (plan §5.1 "hairiest subsystem") |
+| dsp-kernel | frpc-adsprpc + spf_core + audio_q6 deps | weeks |
+| spu-kernel | spcom, spss_utils | weeks |
+| oplus/* tail | Remaining `vendor/oplus/kernel/` not covered | open-ended |
+| Phase 8 — Bucket D residual | Per-module audit + disposition | days |
+
+### Wave 2 closeout deliverables checklist (Plan §5.4)
+
+- [x] jm2 commits across affected forks (~80 across all four)
+- [x] `wave_02_status.md` retrospective written (this section
+      + each sub-wave's per-batch retro)
+- [x] MVB ROM passes Phase 2 validators end-to-end (every sub-wave's
+      brunch closeout exercised this)
+- [x] Release-candidate tag on each jm2 fork — `phase-h-wave-2`
+      (kernel), `wave-2` (modules + device); applied in the same
+      commit batch as this retro
+- [x] `PHASE_6_FLASH_PREP.md` authored — covers super.img semantics,
+      bootloader-fastboot vs fastbootd command matrix, EDL fallback
+      tooling, May 7 recovery lessons. Lands alongside this retro.
+
+### Wave 2 marked COMPLETE (2026-05-13)
+
+Path A authorized. Proceed to Phase 6 hardware flash test with the
+69.7%-Phase-6-boot-predicted ROM after the flash-prep doc and
+release-candidate tags land.
