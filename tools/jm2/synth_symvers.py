@@ -101,17 +101,15 @@ def find_section_index(sections_list, name):
 def extract_crc(ko_path, symbol):
     """Return (crc_u32, is_gpl) for `symbol` in `ko_path`.
 
-    Handles both regular (`__kcrctab` + `__ksymtab`) and GPL-only
-    (`__kcrctab_gpl` + `__ksymtab_gpl`) exports. Real-world OEM modules
-    often export every symbol via EXPORT_SYMBOL_GPL so this is the
-    common case, not the exception.
+    Handles regular (`__kcrctab` + `__ksymtab`) AND GPL-only / mixed
+    (`__kcrctab_gpl` + `__ksymtab_gpl`) exports. Real-world OEM
+    modules often have both sections (mix of EXPORT_SYMBOL and
+    EXPORT_SYMBOL_GPL); the `__crc_<sym>` symbol's section index
+    tells us which kcrctab variant its offset is into.
     """
     data = Path(ko_path).read_bytes()
     sections = parse_elf64_sections(data)
 
-    # Pick the kcrctab + ksymtab variant that exists. Modules can have
-    # one, the other, or both. If both exist we'll fall back later when
-    # the symbol isn't found in the first.
     has_regular = '__kcrctab' in sections and '__ksymtab' in sections
     has_gpl = '__kcrctab_gpl' in sections and '__ksymtab_gpl' in sections
     if not has_regular and not has_gpl:
@@ -119,46 +117,11 @@ def extract_crc(ko_path, symbol):
                          "__kcrctab_gpl section (no exports, or kernel "
                          "without CONFIG_MODULE_REL_CRCS)")
 
-    crctab_off, crctab_size = sections['__kcrctab'] if has_regular else sections['__kcrctab_gpl']
     syms = parse_symbols(data, sections)
 
-    # Find the __crc_<symbol> symbol — its `value` is the byte offset
-    # within whichever __kcrctab variant holds it. If we picked the
-    # regular kcrctab but the offset exceeds it, try the GPL variant.
-    crc_sym_name = f'__crc_{symbol}'
-    crc_offset_in_section = None
-    for sname, value, _shndx in syms:
-        if sname == crc_sym_name:
-            crc_offset_in_section = value
-            break
-    if crc_offset_in_section is None:
-        raise ValueError(f"{symbol}: no __crc_{symbol} symbol — "
-                         f"either {symbol} is not exported by {ko_path}, "
-                         "or the kernel was built without MODVERSIONS")
-    if crc_offset_in_section + 4 > crctab_size:
-        # If the regular kcrctab was the active one but the offset is
-        # out of range, the symbol is GPL-only — switch to __kcrctab_gpl.
-        if has_regular and has_gpl:
-            crctab_off, crctab_size = sections['__kcrctab_gpl']
-            if crc_offset_in_section + 4 > crctab_size:
-                raise ValueError(f"{symbol}: __crc offset {crc_offset_in_section:#x} "
-                                 f"exceeds both __kcrctab sizes "
-                                 f"({sections['__kcrctab'][1]:#x} / {crctab_size:#x})")
-        else:
-            raise ValueError(f"{symbol}: __crc offset {crc_offset_in_section:#x} "
-                             f"exceeds __kcrctab size {crctab_size:#x}")
-
-    crc_u32 = struct.unpack('<I',
-                            data[crctab_off + crc_offset_in_section:
-                                 crctab_off + crc_offset_in_section + 4])[0]
-
-    # GPL classification: kernel exports via EXPORT_SYMBOL_GPL go into
-    # a separate __ksymtab_gpl section (and kcrctab_gpl). If the symbol's
-    # __ksymtab_<symbol> entry is in __ksymtab_gpl, it's GPL.
-    ksym_sym_name = f'__ksymtab_{symbol}'
-    is_gpl = False
-    # Build ordered list of section names so we can check shndx.
-    # parse_elf64_sections returned a dict — re-walk to get an ordered list.
+    # Build an ordered section-names list so we can resolve symbol shndx
+    # to a section name. (parse_elf64_sections returns an unordered dict;
+    # we need the index→name mapping.)
     e_shoff = struct.unpack('<Q', data[0x28:0x30])[0]
     e_shentsize = struct.unpack('<H', data[0x3a:0x3c])[0]
     e_shnum = struct.unpack('<H', data[0x3c:0x3e])[0]
@@ -166,7 +129,6 @@ def extract_crc(ko_path, symbol):
     shstr_off = struct.unpack('<IIQQQQIIQQ',
                               data[e_shoff + e_shstrndx * e_shentsize:
                                    e_shoff + e_shstrndx * e_shentsize + 64])[4]
-
     section_names_by_idx = []
     for i in range(e_shnum):
         base = e_shoff + i * e_shentsize
@@ -174,11 +136,47 @@ def extract_crc(ko_path, symbol):
         end = data.index(b'\x00', shstr_off + name_idx)
         section_names_by_idx.append(data[shstr_off + name_idx:end].decode())
 
-    for sname, _value, shndx in syms:
-        if sname == ksym_sym_name:
-            if shndx < len(section_names_by_idx):
-                is_gpl = section_names_by_idx[shndx] == '__ksymtab_gpl'
+    # Find the __crc_<symbol> symbol — its `value` is the byte offset
+    # within whichever __kcrctab variant holds it; its `shndx` tells us
+    # which one. (For mixed-export modules, .symtab __crc_* entries can
+    # point at EITHER __kcrctab OR __kcrctab_gpl depending on each
+    # symbol's EXPORT_SYMBOL[_GPL] choice.)
+    crc_sym_name = f'__crc_{symbol}'
+    crc_offset_in_section = None
+    crc_shndx = None
+    for sname, value, shndx in syms:
+        if sname == crc_sym_name:
+            crc_offset_in_section = value
+            crc_shndx = shndx
             break
+    if crc_offset_in_section is None:
+        raise ValueError(f"{symbol}: no __crc_{symbol} symbol — "
+                         f"either {symbol} is not exported by {ko_path}, "
+                         "or the kernel was built without MODVERSIONS")
+
+    # Resolve which kcrctab variant the offset is into, by the symbol's
+    # section index. Reject if shndx isn't __kcrctab or __kcrctab_gpl
+    # (would indicate ELF corruption or unsupported export model).
+    if crc_shndx is None or crc_shndx >= len(section_names_by_idx):
+        raise ValueError(f"{symbol}: __crc_{symbol} has invalid shndx={crc_shndx}")
+    kcrctab_section = section_names_by_idx[crc_shndx]
+    if kcrctab_section not in ('__kcrctab', '__kcrctab_gpl'):
+        raise ValueError(f"{symbol}: __crc_{symbol} lives in unexpected "
+                         f"section '{kcrctab_section}' (shndx={crc_shndx})")
+    crctab_off, crctab_size = sections[kcrctab_section]
+    if crc_offset_in_section + 4 > crctab_size:
+        raise ValueError(f"{symbol}: __crc offset {crc_offset_in_section:#x} "
+                         f"exceeds {kcrctab_section} size {crctab_size:#x}")
+
+    crc_u32 = struct.unpack('<I',
+                            data[crctab_off + crc_offset_in_section:
+                                 crctab_off + crc_offset_in_section + 4])[0]
+
+    # GPL classification: we already resolved kcrctab_section above
+    # ('__kcrctab' vs '__kcrctab_gpl'). The kcrctab variant matches the
+    # __ksymtab variant in normal builds, so we can infer GPL-ness
+    # directly without re-scanning the symbol table.
+    is_gpl = (kcrctab_section == '__kcrctab_gpl')
 
     return crc_u32, is_gpl
 

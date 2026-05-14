@@ -5,6 +5,21 @@ endif
 
 KBUILD_OPTIONS+=KGSL_PATH=$(KGSL_MODULE_ROOT)
 
+# Lineage canoe: explicit KBUILD_EXTRA_SYMBOLS for cross-leaf deps.
+# OEM msm_kgsl.ko consumes:
+#   - synx-kernel symbols (in-tree source-built peer)
+#   - qcom-dcvs symbols (OEM-prebuilt-only — Step 7.8d bridge via
+#     synth_symvers'd ../qcom-dcvs.symvers; producer source isn't in
+#     our ext-module corpus, will be source-built in a future wave)
+#   - msm_performance symbols (same OEM-prebuilt-only situation; synth
+#     bridge at ../msm_performance.symvers)
+# Setting KBUILD_OPTIONS replaces kernel.mk auto-append; use $(CURDIR)
+# per the 2I/2G-a lesson.
+KBUILD_EXTRA_SYMBOLS := $(abspath $(CURDIR)/../synx-kernel/Module.symvers)
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../qcom-dcvs.symvers)
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../msm_performance.symvers)
+export KBUILD_EXTRA_SYMBOLS
+
 all: modules
 
 modules_install:

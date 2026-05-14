@@ -1,0 +1,4 @@
+0x4af764b2	qcom_dcvs_update_votes	drivers/soc/qcom/dcvs	EXPORT_SYMBOL_GPL	
+0xb69fbc44	qcom_dcvs_register_voter	drivers/soc/qcom/dcvs	EXPORT_SYMBOL_GPL	
+0x083abcc1	qcom_dcvs_hw_minmax_get	drivers/soc/qcom/dcvs	EXPORT_SYMBOL_GPL	
+0xb69fbc44	qcom_dcvs_unregister_voter	drivers/soc/qcom/dcvs	EXPORT_SYMBOL_GPL	

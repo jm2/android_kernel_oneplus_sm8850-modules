@@ -3893,3 +3893,151 @@ Batch-2G-b closed. Next: batch-2G-c (graphics-kernel, msm_kgsl.ko —
 largest source set of the 2G batches; canoe_perf_gpuconf exists; no
 oplus extension surface). Iteration budget intact (Wave 2's running
 max remains 6 at 2I).
+
+---
+
+## Sub-wave 2G batch-2G-c retrospective (2026-05-13)
+
+### Outcome: 1/1 module clean at v6 — ties Wave 2 running max
+
+| Module | Source | Outcome |
+|---|---|---|
+| `msm_kgsl` | `vendor/qcom/opensource/graphics-kernel/...` | **clean at v6** |
+
+`msm_kgsl.ko` at vermagic `6.12.23-4k-gf3f146a669fc`, **534 __versions**
+(OEM 531; 3-symbol superset, likely from OPLUS_FEATURE_GEAS_GPU
+pulling in extra references).
+
+### Iteration history (6 to green; ties Wave 2 max at 2I)
+
+| v | Failure class | Specifics + fix |
+|---|---|---|
+| v1 | Step 7.6 (Make/C asymmetry) + cross-leaf include | (1) `msm_hw_fence.h` not found — add `-I mm-drivers/hw_fence/include/`. (2) `CONFIG_QCOM_KGSL_IDLE_TIMEOUT` used as C identifier but conf-file Make-only — add `-DCONFIG_QCOM_KGSL_IDLE_TIMEOUT=80`. (3) `CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR` same shape — add `-D...=\"msm-adreno-tz\"`. (Same `=y` Make-side gates on SORT_POOL/CONTEXT_DEBUG/IOCOHERENCY/SYNX/RT_MUTEX/OPLUS_GPU_MINIDUMP also needed `-D` for C-side #ifdef.) |
+| v2 | cross-leaf include | `synx_api.h` not found (gated by `CONFIG_QCOM_KGSL_SYNX=1` we just defined). Add `-I synx-kernel/msm/synx/`. |
+| v3 | cross-leaf include (transitive) | `synx_header.h` not found (from `synx_api.h`). Add `-I synx-kernel/include/uapi/synx/media/`. |
+| v4 | OEM-source bug | `governor_msm_adreno_tz.c:521`: `call to undeclared function 'of_device_is_compatible'`. OEM source includes `<linux/of_platform.h>` but relies on transitive `<linux/of.h>` which doesn't happen in our kernel. Source-patched to add `#include <linux/of.h>`. |
+| v5 | modpost (5 undefineds, dcvs + msm_performance) | Step 7.8d bridge: synth_symvers OEM `qcom-dcvs.ko` (4 symbols) + OEM `msm_performance.ko` (1 symbol) → KBUILD_EXTRA_SYMBOLS additions. BUT: surfaced a synth_symvers.py bug — see v6. |
+| v6 | (after tool fix) | green. |
+
+### `synth_symvers.py` mixed-export bug — most impactful tool fix
+
+The v5 attempt to synth qcom-dcvs.ko's CRCs surfaced a wrong-results
+bug: all 4 symbols emitted the same CRC `0xcd11e499` (which matched
+NO real OEM CRC). Tool was reading from `__kcrctab` (non-GPL) using
+offsets that belong to `__kcrctab_gpl`.
+
+Root cause: the tool's "pick kcrctab variant" logic defaulted to
+the regular kcrctab when both were present (qcom-dcvs has BOTH a
+non-GPL __kcrctab AND a __kcrctab_gpl, mixing EXPORT_SYMBOL and
+EXPORT_SYMBOL_GPL). But each `__crc_<sym>` symbol's `shndx` indicates
+which kcrctab section ITS offset is into. The fix: read each `__crc_*`
+symbol's section index and use that section's `crctab_off` for the
+read, instead of inferring from section presence.
+
+This bug had been latent since the 2G-a GPL-only extension: only
+surfaced now because qcom-dcvs is the first MIXED-export OEM module
+we've bridged. Both 2I (cnss_utils — non-GPL only) and 2G-a
+(frpc-adsprpc — GPL only) had pure-single-mode kcrctabs that escaped
+the bug.
+
+Verification: post-fix, all 4 dcvs CRCs match OEM consumer's
+expectations exactly (0x4af764b2 / 0xb69fbc44 / 0x083abcc1 / 0xb69fbc44).
+Plus msm_performance's 0xbeb2e3f3 matches.
+
+### Phase-6 boot prediction climb (Metric C)
+
+| Snapshot | Source-built overrides | Phase-6 boot prediction |
+|---|---|---|
+| Post-2G-b | 193 | 270/389 = 69.4% |
+| **Post-2G-c** | **194** | **271/389 = 69.7%** |
+
+Delta: +1 (msm_kgsl).
+
+### Cumulative-evidence line (Step 7.10 canonical format)
+
+> **Missing EXPORTs: 0 cumulative across all sub-waves.** Buffer: 2.
+> Evidence: 12 ext-module sub-waves + 14 kernel-internal-already-built +
+> 9 techpack-overlay-patched = 35 data points across 3 classes.
+> Per-sub-wave OEM-EXPORT verification: 12/12 sub-waves passing.
+> **Phase-6 boot prediction (Metric C): 69.7% (271/389), +194 vs
+> static baseline, +1 vs post-2G-b.**
+
+### Status
+
+Batch-2G-c closed. **Sub-wave 2G closed: 3/3 batches clean.**
+
+---
+
+## Sub-wave 2G close-out (2026-05-13)
+
+### Aggregate outcome
+
+| Batch | Module | Iterations | Outcome |
+|---|---|---|---|
+| 2G-a | msm-eva | 5 | clean |
+| 2G-b | msm_video | 3 | clean |
+| 2G-c | msm_kgsl | 6 | clean |
+
+3/3 batches clean. Total: 3 new source-built modules from 2G. Plus
+2 cascade deps (qti_battery_charger from 2E was Phase-6 prediction +1;
+debug-regulator from 2E was build-side only). Total source-built
+overrides since 2G start: 194 (up from 191 at 2E close).
+
+### Recipe-class confirmations across 2G
+
+The 2G batches confirmed the running running pattern from prior
+sub-waves:
+
+1. **Cascade pre-flight (Step 7.8e)** continues to pay off — 2G-a's
+   cascade was discovered via the C-side `#ifdef CONFIG_EVA_CANOE` block
+   in cvp_comm_def.h, an "indirect cascade" the BUILD.bazel dep tree
+   doesn't surface; surfaced at first build attempt.
+2. **Explicit `KBUILD_EXTRA_SYMBOLS` replaces auto-append** — needed
+   in all 3 2G batches (recipe-class).
+3. **Step 7.7 OEM-source toolchain warnings** — recurring class
+   (Wno-error=default-const-init-field-unsafe at 2G-b; not at 2G-a
+   or 2G-c).
+4. **Step 7.6 Make/C asymmetry** — recurring on conf-file values used
+   as C identifiers (2G-c).
+5. **OEM-source bugs that need direct source patch** — appeared at
+   2G-c (governor_msm_adreno_tz.c missing `<linux/of.h>`) and earlier
+   at minidump_memory.c during Phase 2.5. Step 7.7-adjacent class.
+
+### `synth_symvers.py` GPL-mixed-export bug
+
+The most impactful institutional artifact from this sub-wave. Latent
+since the 2G-a GPL-only extension; would have caused wrong-results
+on any future MIXED-export OEM module synth (likely common). Now
+fixed and verified against OEM consumer's expectations.
+
+### Phase-6 boot prediction climb across 2G
+
+| Snapshot | Phase-6 boot prediction |
+|---|---|
+| Post-2E close | 268/389 = 68.9% |
+| Post-2G-a | 269/389 = 69.2% |
+| Post-2G-b | 270/389 = 69.4% |
+| **Post-2G close** | **271/389 = 69.7%** |
+
+### Wave 2 closeout direction
+
+Sub-wave 2G closes the last 2E-style ext-module sub-wave on the
+Wave 2 roadmap. Remaining items:
+
+- **2F.3 charger v2 retry** (lowest priority — OEM-Bazel-environment-
+  coupled per 2F.3 retro; structural couplings still apply)
+- **Wave 2 release-candidate tags** on three jm2 forks
+- **Phase 6 flash-prep doc** before Phase 6 hardware test
+- **Phase 6 hardware flash test** itself
+
+Phase 7+ Bucket C scope (post-Wave-2) remains:
+- Sub-wave 2J (cpu/scheduler — qcom_lpm + SCHED_WALT + 4 OEM ext-deps)
+- Wave 5 — WLAN platform (cnss2, qca_cld3)
+- dsp-kernel (frpc-adsprpc + spf_core + audio_q6 deps)
+- spu-kernel (spcom, spss_utils)
+- oplus/* tail
+- Eventually Bucket D residual handling
+
+The 118 remaining `load-fail-module-layout` modules in modules.load
+are the Phase-7+ scope. ROM-wise Wave 2 is effectively closed at
+69.7% boot prediction.

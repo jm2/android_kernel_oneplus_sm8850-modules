@@ -81,6 +81,45 @@ ifeq ($(CONFIG_ARCH_SM6150), y)
 	subdir-ccflags-y += $(LE_EXTRA_CFLAGS)
 endif
 
+# Lineage canoe (SM8850). canoe_perf_gpuconf was authored upstream in
+# config/ (CONFIG_QCOM_KGSL=m + canoe-specific tunings) but not
+# sourced from any Kbuild block — same pattern as bt-kernel/eva-kernel
+# canoe gates. The -DCONFIG_OPLUS_FEATURE_GEAS_GPU copt comes from
+# kgsl_defs.bzl's canoe target spec.
+#
+# Step 7.6 Make/C asymmetry: the conf-file's CONFIG_ values are
+# Make-side only by default. OEM's Kleaf separately surfaces them as
+# C-side -D flags; our build doesn't. The non-#ifdef-usage ones
+# (read as C identifiers in code) need explicit -D:
+#   - CONFIG_QCOM_KGSL_IDLE_TIMEOUT (integer literal 80,
+#     adreno.c:1033 reads it as a number)
+#   - CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR (string literal,
+#     kgsl_pwrscale.c:821 reads it as a string)
+# The =y ones (CONFIG_QCOM_KGSL_SORT_POOL, etc.) are used via
+# #ifdef CONFIG_X gates and the Make-include is sufficient to gate
+# obj-$(CONFIG_X) lines but does NOT define them at C-preproc time.
+# Use KBUILD_CPPFLAGS -D for each so C-side #ifdef sees them.
+ifeq ($(CONFIG_ARCH_CANOE), y)
+	include $(KGSL_PATH)/config/canoe_perf_gpuconf
+	ccflags-y += -DCONFIG_OPLUS_FEATURE_GEAS_GPU
+	# Cross-leaf include paths:
+	#   mm-drivers/hw_fence/include/ — msm_hw_fence.h (kgsl_sync.c:220)
+	#   synx-kernel/msm/synx/         — synx_api.h (kgsl_sync.c:61,
+	#     reached when CONFIG_QCOM_KGSL_SYNX=1)
+	ccflags-y += -I$(KGSL_PATH)/../mm-drivers/hw_fence/include/
+	ccflags-y += -I$(KGSL_PATH)/../synx-kernel/msm/synx/
+	ccflags-y += -I$(KGSL_PATH)/../synx-kernel/include/uapi/synx/media/
+	# C-side #defines from the conf file (Step 7.6 Make/C asymmetry)
+	KBUILD_CPPFLAGS += -DCONFIG_QCOM_KGSL_IDLE_TIMEOUT=80
+	KBUILD_CPPFLAGS += -DCONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR=\"msm-adreno-tz\"
+	KBUILD_CPPFLAGS += -DCONFIG_QCOM_KGSL_SORT_POOL=1
+	KBUILD_CPPFLAGS += -DCONFIG_QCOM_KGSL_CONTEXT_DEBUG=1
+	KBUILD_CPPFLAGS += -DCONFIG_QCOM_KGSL_IOCOHERENCY_DEFAULT=1
+	KBUILD_CPPFLAGS += -DCONFIG_QCOM_KGSL_SYNX=1
+	KBUILD_CPPFLAGS += -DCONFIG_QCOM_KGSL_RT_MUTEX=1
+	KBUILD_CPPFLAGS += -DCONFIG_OPLUS_GPU_MINIDUMP=1
+endif
+
 ccflags-y += -I$(KGSL_PATH) -I$(KGSL_PATH)/include/linux -I$(KGSL_PATH)/include -I$(KERNEL_SRC)/drivers/devfreq -I$(KERNEL_SRC)/mm/oplus_mm
 
 obj-$(CONFIG_QCOM_KGSL) += msm_kgsl.o
