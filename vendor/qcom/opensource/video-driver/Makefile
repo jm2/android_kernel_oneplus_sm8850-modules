@@ -1,12 +1,36 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
+# Lineage canoe (kernel.mk-driven build): OEM's Kleaf injects
+# CONFIG_MSM_VIDC_ANDROID=m via KBUILD_OPTIONS so the top-level Kbuild
+# uses the msm_video/ subdir (which has the canoe-specific iris4 obj
+# additions and canoe_video.conf include). Our build doesn't have that
+# injection point, so default it here.
+CONFIG_MSM_VIDC_ANDROID ?= m
+
 $(info CONFIG_MSM_VIDC_ANDROID=$(CONFIG_MSM_VIDC_ANDROID))
 
 ifneq ($(CONFIG_MSM_VIDC_ANDROID), m)
 M := $(shell pwd)
 KBUILD_OPTIONS += VIDEO_ROOT=$(M)
 VIDEO_ROOT := $(shell pwd)
+else
+# kernel.mk-driven build: M is passed by the caller (relative to the
+# kernel tree). Resolve VIDEO_ROOT to absolute and propagate
+# CONFIG_MSM_VIDC_ANDROID to the recursive make so the top-level Kbuild
+# sees the `m` branch.
+KBUILD_OPTIONS += VIDEO_ROOT=$(abspath $(KERNEL_SRC)/$(M))
+KBUILD_OPTIONS += CONFIG_MSM_VIDC_ANDROID=m
+VIDEO_ROOT := $(abspath $(KERNEL_SRC)/$(M))
 endif
+
+# Lineage canoe: cross-leaf symvers explicit (kernel.mk's auto-append
+# is replaced when we set KBUILD_OPTIONS above). All three deps are
+# in-tree source-built peers earlier in TARGET_KERNEL_EXT_MODULES.
+# Use $(CURDIR) per the 2I/2G-a lesson; $(M) doubles paths.
+KBUILD_EXTRA_SYMBOLS := $(abspath $(CURDIR)/../synx-kernel/Module.symvers)
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../mmrm-driver/Module.symvers)
+KBUILD_EXTRA_SYMBOLS += $(abspath $(CURDIR)/../mm-drivers/hw_fence/Module.symvers)
+export KBUILD_EXTRA_SYMBOLS
 
 VIDEO_COMPILE_TIME = $(shell date)
 VIDEO_COMPILE_BY = $(shell echo $(USER))

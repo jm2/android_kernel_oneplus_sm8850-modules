@@ -34,6 +34,11 @@ endif
 ifeq ($(CONFIG_ARCH_CANOE), y)
 include $(VIDEO_ROOT)/config/canoe_video.conf
 LINUXINCLUDE   += -include $(VIDEO_ROOT)/config/canoe_video.h
+# OEM source uses default-init of struct mmrm_client_desc which has a
+# const member (resources.c:836); clang 22 raises
+# -Wdefault-const-init-field-unsafe by default, OEM's compiler doesn't.
+# Step 7.7 OEM-source-toolchain class — same fix as prior sub-waves.
+ccflags-y += -Wno-error=default-const-init-field-unsafe
 endif
 
 ifeq ($(CONFIG_ARCH_SERAPH), y)

@@ -3819,3 +3819,77 @@ further into the pipeline). This is the same pattern as 2I:
 Batch-2G-a closed. Next: batch-2G-b (video-driver, two .ko:
 msm_video + video; canoe_video.conf + canoe_video.h exist;
 standard ext-module class).
+
+---
+
+## Sub-wave 2G batch-2G-b retrospective (2026-05-13)
+
+### Outcome: 1/1 module clean at v3
+
+| Module | Source | Outcome |
+|---|---|---|
+| `msm_video` | `vendor/qcom/opensource/video-driver/msm_video/...` | **clean at v3** |
+
+`msm_video.ko` at vermagic `6.12.23-4k-gf3f146a669fc`, 263 __versions
+(vs OEM's 269; small delta likely due to in-tree-vs-OEM config nuance,
+worth a future exports_superset_check pass).
+
+### Pre-flight: canoe support pre-wired upstream
+
+Unlike eva-kernel (which needed authored canoeevaconf.h + a new canoe
+block in msm/Kbuild), video-driver's `msm_video/Kbuild` already had
+all canoe machinery in tree:
+- lines 34-37: `CONFIG_ARCH_CANOE`-gated `include canoe_video.conf` +
+  LINUXINCLUDE -include canoe_video.h
+- lines 62-66: iris4 + canoe + alor `-I` include paths
+- lines 115-123: 7 canoe-specific obj entries (iris4 + canoe + alor sources)
+
+Only Make-side gap: OEM's Kleaf injects CONFIG_MSM_VIDC_ANDROID=m via
+KBUILD_OPTIONS so the top-level Kbuild picks the msm_video/ subdir.
+Our kernel.mk-driven build doesn't have that injection point.
+
+### Iteration history (3 to green)
+
+| v | Failure mode | Fix |
+|---|---|---|
+| v1 | Compile: `-Werror,-Wdefault-const-init-field-unsafe` on resources.c:836 (mmrm_client_desc has const member; clang 22 stricter than OEM's compiler) | `ccflags-y += -Wno-error=default-const-init-field-unsafe` in msm_video/Kbuild canoe block (Step 7.7 OEM-source-toolchain class — recurring pattern from prior sub-waves) |
+| v2 | modpost: 9 undefined symbols (mmrm_client_* + synx_* + msm_hw_fence_*) | Explicit `KBUILD_EXTRA_SYMBOLS` in Makefile enumerating synx-kernel + mmrm-driver + mm-drivers/hw_fence symvers (same 2G-a lesson: setting KBUILD_OPTIONS replaces auto-append) |
+| v3 | — | green |
+
+### Recipe-class pattern recurrence (not novel)
+
+Both batch-2G-a and batch-2G-b ran into "explicit KBUILD_OPTIONS
+replaces kernel.mk auto-append → must enumerate KBUILD_EXTRA_SYMBOLS
+yourself." This is now a confirmed recurring pattern. Worth promoting
+to WIRE_UP_RECIPE Step 7.10 or a Step 7.11 explicit-KBUILD_OPTIONS
+note in a future doc-pass.
+
+Similarly the `-Wno-error=default-const-init-field-unsafe` and other
+clang-22 `-Werror` suppressions are now seen across multiple sub-waves;
+the umbrella Step 7.7 already captures the class — no new recipe entry
+needed.
+
+### Phase-6 boot prediction climb (Metric C)
+
+| Snapshot | Source-built overrides | Phase-6 boot prediction |
+|---|---|---|
+| Post-2G-a | 192 | 269/389 = 69.2% |
+| **Post-2G-b** | **193** | **270/389 = 69.4%** |
+
+Delta: +1 (msm_video).
+
+### Cumulative-evidence line (Step 7.10 canonical format)
+
+> **Missing EXPORTs: 0 cumulative across all sub-waves.** Buffer: 2.
+> Evidence: 11 ext-module sub-waves + 14 kernel-internal-already-built +
+> 9 techpack-overlay-patched = 34 data points across 3 classes.
+> Per-sub-wave OEM-EXPORT verification: 11/11 sub-waves passing.
+> **Phase-6 boot prediction (Metric C): 69.4% (270/389), +193 vs
+> static baseline, +1 vs post-2G-a.**
+
+### Status
+
+Batch-2G-b closed. Next: batch-2G-c (graphics-kernel, msm_kgsl.ko —
+largest source set of the 2G batches; canoe_perf_gpuconf exists; no
+oplus extension surface). Iteration budget intact (Wave 2's running
+max remains 6 at 2I).
