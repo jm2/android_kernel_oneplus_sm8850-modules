@@ -1,0 +1,9 @@
+# Build artifacts produced by video-driver/Makefile:
+#  - driver/driver is a leftover self-referential symlink from a failed
+#    build run (the recipe meant to create msm_video/driver → driver
+#    but can end up at driver/driver under some conditions).
+#  - video_generated_h is regenerated each build with date/host strings.
+driver/driver
+msm_video/driver
+video/driver
+driver/vidc/inc/video_generated_h
