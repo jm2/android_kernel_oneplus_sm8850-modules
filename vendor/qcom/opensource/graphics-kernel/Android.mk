@@ -53,8 +53,17 @@ ifeq ($(TARGET_BOARD_PLATFORM), pineapple)
         LOCAL_REQUIRED_MODULES    := hw-fence-module-symvers
         LOCAL_ADDITIONAL_DEPENDENCIES := $(call intermediates-dir-for,DLKM,hw-fence-module-symvers)/Module.symvers
 endif
-# Include msm_kgsl.ko in the /vendor/lib/modules (vendor.img)
+# Include msm_kgsl.ko in the /vendor/lib/modules (vendor.img).
+# Skip when BOARD_PREBUILT_KERNEL=true: KERNEL_MODULES_OUT is empty under
+# the prebuilt-kernel path, so $(LOCAL_MODULE_PATH)/$(LOCAL_MODULE) becomes
+# `/msm_kgsl.ko`, and AOSP's depmod_vendor install rule registers it by
+# basename — colliding with the OEM-prebuilt msm_kgsl.ko already added via
+# the infiniti-kernel/modules/vendor_dlkm wildcard in sm8850-common
+# BoardConfigCommon.mk. See "Phase-5 wave-2 BOARD_VENDOR_KERNEL_MODULES
+# collision class" in DEFERRED_FOLLOWUPS.md.
+ifneq ($(BOARD_PREBUILT_KERNEL),true)
 BOARD_VENDOR_KERNEL_MODULES += $(LOCAL_MODULE_PATH)/$(LOCAL_MODULE)
+endif
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
 
 endif # DLKM check

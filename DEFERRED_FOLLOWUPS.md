@@ -1123,3 +1123,101 @@ non-trivial.
 
 **When to revisit:** When source-build path is booting and userspace
 gesture settings work; this is a power-user feature that follows MVB.
+
+---
+
+## Phase-5 wave-2 `BOARD_VENDOR_KERNEL_MODULES` collision class
+
+**Surfaced:** 2026-05-16 (Phase-6 OEM-prebuilt v9/v10 builds; clean
+rebuild after layout-adapt + repo sync).
+
+**Context:**
+`BOARD_PREBUILT_KERNEL=true` is structurally weaker than its name
+implies. The toggle gates the kernel binary build (via
+`TARGET_FORCE_PREBUILT_KERNEL := true` flipping kernel.mk:248's
+`FULL_KERNEL_BUILD := false`) — but Phase-5 wave-2 modules under
+`vendor/qcom/opensource/*/Android.mk` still get processed by kati and
+unconditionally contribute to `BOARD_VENDOR_KERNEL_MODULES`:
+
+```makefile
+LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
+BOARD_VENDOR_KERNEL_MODULES += $(LOCAL_MODULE_PATH)/$(LOCAL_MODULE)
+```
+
+Under the prebuilt path, `KERNEL_MODULES_OUT` is empty (no
+source-kernel build → no install dir computed), so the appended path
+becomes `/<module>.ko`. AOSP's `build/make/core/Makefile`
+`depmod_vendor_stripped_intermediates` rule registers the install
+target by basename, producing the same `vendor_dlkm/lib/modules/<mod>.ko`
+target as the OEM-prebuilt copy already added by the
+`infiniti-kernel/modules/vendor_dlkm/*.ko` wildcard in
+`sm8850-common/BoardConfigCommon.mk`. Result:
+
+- **v9 (default):** `ninja: out/build-lineage_infiniti.ninja: multiple
+  rules generate out/target/product/infiniti/vendor_dlkm/lib/modules/msm_kgsl.ko`
+  (ninja dupbuild=err)
+- **v10 (option C — `KERNEL_MODULES_OUT := infiniti-kernel/modules/vendor_dlkm`):**
+  `build/make/core/Makefile:713: error: overriding commands for target
+  out/.../depmod_vendor_stripped_intermediates/msm_kgsl.ko` (kati layer)
+  — same root cause, moved one layer up because both rules now resolve
+  to the *same* path string
+
+A defensive `BOARD_VENDOR_KERNEL_MODULES := $(filter-out /%,$(...))` in
+BoardConfigCommon.mk runs at BoardConfig parse time, but the Android.mk
+appends happen *later* during kati processing — the filter has no effect.
+
+**Scope of the class (2026-05-16 grep):**
+Across all of `kernel/oneplus/sm8850-modules`, exactly **one** Android.mk
+has an uncommented `BOARD_VENDOR_KERNEL_MODULES +=` line:
+`vendor/qcom/opensource/graphics-kernel/Android.mk`. Two others
+(`mmrm-driver`, `synx-kernel`) have the line *commented out* by
+upstream, and the rest of the 50+ Android.mk files don't contribute at
+all (they rely on the `infiniti-kernel/` wildcard for vendor_dlkm
+inclusion).
+
+**RESOLVED (minimal-B, 2026-05-16):** wrapped the single uncommented
+contribution in `ifneq ($(BOARD_PREBUILT_KERNEL),true) ... endif`.
+This preserves source-build behavior (where `KERNEL_MODULES_OUT` is
+populated and the entry is a real install path) while skipping the
+contribution under the prebuilt-kernel path.
+
+**Concrete tasks (full-B follow-up, not yet landed):**
+
+1. **Defensive in-place pattern**: When future wave-2 modules
+   uncomment or add `BOARD_VENDOR_KERNEL_MODULES += ...` lines (e.g.,
+   if mmrm-driver or synx-kernel are uncommented as part of further
+   wave work), they must adopt the same `ifneq` wrap. WIRE_UP_RECIPE
+   should call this out as a checklist item under "Phase-5 module
+   Android.mk authoring".
+
+2. **Compile-time enforcement** (preferred over checklist): teach
+   `tools/jm2/wave_gate.py` to flag any Android.mk under
+   `kernel/oneplus/sm8850-modules/vendor/**` that has an
+   `^[^#]*BOARD_VENDOR_KERNEL_MODULES.*\+=` line *not* preceded by an
+   `ifneq ($(BOARD_PREBUILT_KERNEL),true)` block. Reject the wave's
+   close-out gate until the wrap is in place.
+
+3. **Upstream consideration**: this is also an upstream graphics-kernel
+   bug (the line is unconditional in OEM Kleaf trees because Kleaf
+   doesn't have a `BOARD_PREBUILT_KERNEL` concept; AOSP-side adapters
+   need it). Worth a PR to OnePlus-SM8850-Development eventually so
+   future kernel.opensource pulls inherit the fix.
+
+4. **Discipline lesson worth surfacing in WIRE_UP_RECIPE**: the
+   `BOARD_PREBUILT_KERNEL` toggle does NOT gate Phase-5 module
+   contributions. The toggle name is misleading; the correct mental
+   model is "kernel binary toggle" not "kernel + modules toggle". Any
+   future toggle that claims to disable a build path should be
+   audited against actual contribution mechanisms.
+
+**Rationale for deferring (full-B):**
+Minimal-B unblocks the Phase-6 hardware test. The full-B work
+(checklist + gate enforcement + upstream PR) is preventive against
+recurrence, not blocking. The collision class is now named and
+understood; the gate work can land in the next discipline-tooling
+wave alongside the pre-flight verification gate.
+
+**When to revisit:** Before the next wave-2 module Android.mk addition
+(specifically: if mmrm-driver or synx-kernel get their currently-commented
+lines uncommented, OR if new external Qualcomm module trees are added
+to `vendor/qcom/opensource/`).
