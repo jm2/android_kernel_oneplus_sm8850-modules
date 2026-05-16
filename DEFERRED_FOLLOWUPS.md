@@ -721,3 +721,403 @@ To add new entries:
 When an item moves out (landed or accepted as won't-do), strike it
 through with `~~`-markers and prepend a "RESOLVED YYYY-MM-DD: ..."
 line. Don't delete — historical record matters.
+
+---
+
+## Pre-flight verification gate for config-fragment work
+
+**Surfaced:** 2026-05-15 (Phase 6 boot-failure investigation; B''
+re-validation discovered the original B'' audit measured a kernel that
+hadn't actually been rebuilt with production_profile.config applied).
+
+**Context:**
+The original Path B'' "ZERO convergence" verdict (2026-05-12) was
+authored from kmi_audit output produced against the May-12 vmlinux,
+which IKCONFIG extraction proved still had all 12 B'' flags = y. The
+fragment was committed to `arch/arm64/configs/production_profile.config`
+but never added to `TARGET_KERNEL_CONFIG` in BoardConfigCommon.mk, so
+Kbuild's config-merge step never saw the flips, .config content
+matched dev-baseline, and Kbuild correctly reused the existing Image
+(content-identical). The audit script ran cleanly, the conclusion was
+internally consistent, ninja produced no errors — the failure mode was
+invisible from the build output alone.
+
+**Concrete tasks:**
+
+1. New script `tools/jm2/verify_kernel_config.py`. Inputs:
+   - `--vmlinux PATH` (required)
+   - `--expected CONFIG=value` (repeatable; e.g., `CONFIG_KASAN=n`)
+   - `--reference-mtime SECONDS` (optional; assert vmlinux mtime > this)
+   - `--ikconfig-extract PATH` (optional; defaults to in-tree
+     `kernel/oneplus/sm8850/scripts/extract-ikconfig`)
+
+   Outputs: exit 0 if all expectations match the IKCONFIG embedded in
+   vmlinux; exit non-zero with a per-flag diff table on mismatch.
+
+2. Wire into `tools/jm2/wave_gate.py`'s pre-audit step. Any wave/phase
+   that flips kernel CONFIGs must pass this gate before its kmi_audit
+   result is treated as load-bearing.
+
+3. Documentation: append a "Pre-flight gate" section to WIRE_UP_RECIPE.md
+   that recommends this check before any new audit invocation.
+
+4. Retroactive: re-run B'' audit through the gate (already done
+   informally on 2026-05-15; codify the gate so the next config-flip
+   work doesn't slip).
+
+**Rationale for deferring:**
+None — high priority. Cheap to implement (~50 LOC Python) and
+immediately prevents the entire class of unmeasured-config-flip
+failures. Schedule alongside the next wave that touches kernel config.
+
+**When to revisit:** Immediately. Should land before any further
+config-fragment work (next likely trigger: post-Phase-6 source-build
+attempts that flip CONFIG_CFI_CLANG or other CRC-affecting flags).
+
+---
+
+## Source-build vendor_ramdisk first-stage module staging gap
+
+**Surfaced:** 2026-05-15 (investigation of why source-build boot stack
+fails before display init; classified the 53 missing first-stage
+modules into A/B/C buckets).
+
+**Context:**
+`device/oneplus/sm8850-common/modules.list.msm.canoe` lists 97
+first-stage modules. Only 44 actually end up in
+`out/.../obj/PACKAGING/depmod_vendor_ramdisk_intermediates/lib/modules/`.
+The 53 missing classified as:
+
+- **Bucket A (load-list naming mismatch)**: 0. No quick rename fixes.
+- **Bucket B (built but not staged)**: 40. ALL of these `.ko` files
+  exist in `out/.../vendor_dlkm/lib/modules/` (built and shipping to
+  vendor_dlkm partition), they just don't get staged into the
+  first-stage vendor_ramdisk. Critical members: `ufs_qcom.ko` (storage
+  host controller — without it kernel can't mount any partition),
+  `iommu-logger`, `qcom_iommu_util`, `msm_dma_iommu_mapping`,
+  `gic_intr_routing`, `memory_dump_v2`, `minidump`, `qcom_dma_heaps`,
+  `sched-walt`, `qcom-reboot-reason`, `qcom-dload-mode`, `pmic-pon-log`,
+  `bcl_pmic5`, `cpu_hotplug`. Root cause: `BOARD_VENDOR_RAMDISK_KERNEL_MODULES`
+  (the AOSP staging variable) is **never assigned** in BoardConfigCommon.mk.
+  Without it, only modules from `_LOAD` that happen to be in default
+  staging end up there.
+- **Bucket C (genuinely not built)**: 13. `oplusboot.ko`,
+  `buildvariant.ko`, `boot_mode.ko`, `bootloader_log.ko`,
+  `oplus_ftm_mode.ko`, `oplus_charger_present.ko`, `olc.ko`,
+  `kernel_fb.ko`, `gunyah_loader.ko`, `gh_virt_wdt.ko`,
+  `qcom-cpufreq-{hw,thermal}.ko`, `cpu_phys_log_map.ko`. These are
+  wave wire-up gaps — some intentionally deferred (oplus boot stack
+  was supposed to be Wave 1 but appears regressed), some not yet
+  scoped (cpufreq, gunyah loader).
+
+**Concrete tasks:**
+
+1. Add to BoardConfigCommon.mk:177-189 area:
+   ```
+   BOARD_VENDOR_RAMDISK_KERNEL_MODULES := $(BOARD_VENDOR_KERNEL_MODULES)
+   ```
+   (or a curated subset that exactly matches modules.list.msm.canoe).
+   This unlocks all 40 Bucket-B modules in one line.
+
+2. Bucket C: cross-reference each against waves/wave_01_status.md and
+   the source tree. For each module, decide: (a) genuinely missing
+   wire-up (file a wave-3 sub-task), (b) intentionally deferred
+   (document in noop_modules.md), (c) replaced by an OEM-prebuilt
+   under a different name (document as resolved).
+
+3. Verify post-fix: re-run the staging classification script (in
+   project_phase6_boot_failure_state memory or recreate). Expect
+   PRESENT count to jump from 44/97 to 84/97 after Bucket B fix.
+
+**Rationale for deferring:**
+Highest-leverage source-build improvement available. Without this,
+the source-build path can't boot regardless of any other fix
+(no UFS at first stage = no rootfs mount). Schedule before the next
+source-build hardware test attempt.
+
+**When to revisit:** Before next source-build hardware test. Strictly
+required for source-build path; orthogonal to OEM-prebuilt path.
+
+---
+
+## BOARD_BOOTCONFIG missing androidboot.hypervisor.version=gunyah
+
+**Surfaced:** 2026-05-15 (cross-reference vs upstream
+OnePlus-SM8850-Development sm8850-common authoritative set + stock
+vendor_boot bootconfig dump).
+
+**Context:**
+Stock vendor_boot bootconfig has 8 keys; ours
+(`device/oneplus/sm8850-common/BoardConfigCommon.mk:94-101`) has 7.
+Missing: `androidboot.hypervisor.version=gunyah`. Confirmed by:
+(a) `unpack_bootimg` of stock vendor_boot.img bootconfig section,
+(b) upstream OnePlus-SM8850-Development sm8850-common BoardConfigCommon.mk
+authoritative set, (c) our build is missing `gunyah_loader.ko` which
+is the producer of this property.
+
+**Concrete tasks:**
+1. Append `androidboot.hypervisor.version=gunyah \` to BOARD_BOOTCONFIG
+   between `protected_vm.supported=true` and `load_modules_parallel=true`
+   (alpha-sort order matches stock).
+2. Verify post-build: `unpack_bootimg --boot_img out/.../vendor_boot.img`
+   should show 8 bootconfig keys matching stock.
+
+**Rationale for deferring:**
+One-line fix. Note: kernel may not honor this property if
+`gunyah_loader.ko` (Bucket C) isn't present in vendor_ramdisk first-stage
+— but bootconfig parity removes one variable from the boot-failure
+investigation regardless.
+
+**When to revisit:** Schedule alongside the BOARD_VENDOR_RAMDISK_KERNEL_MODULES
+staging fix (above) so the bootconfig property has a producer.
+
+---
+
+## Refresh device/oneplus/infiniti-kernel/ from current stock dump
+
+**Surfaced:** 2026-05-15 (Phase 6 prebuilt-path retest preparation).
+
+**RESOLVED 2026-05-15 (after a regression-and-recover cycle).** The
+"refresh" was needed (Apr 24 blobs were stale from a different OEM
+OTA: kernel `615f5dd9...` vs the device's actual installed
+`2609ff52...` since Mar 25 at minimum). The first refresh attempt
+introduced its own bug: I dumped modules from THREE source partitions
+(vendor_dlkm + system_dlkm + vendor_ramdisk = 669 modules) into the
+flat `infiniti-kernel/*.ko` dir, and the build's wildcard glob shoveled
+all 669 into vendor_dlkm.img — wrong partition for 237 of them,
+producing bootloops + dead recovery on hardware.
+
+The community's Apr 13 LineageOS build (downloaded for diff comparison)
+provided ground truth: their vendor_dlkm.img has **432 modules**
+(matches what's in OEM stock vendor_dlkm.img — they extract from the
+same OTA stream). So the corrected procedure is: **only modules from
+vendor_dlkm.img belong in `infiniti-kernel/`; system_dlkm and
+vendor_ramdisk modules ship via their respective partitions.**
+
+Final corrected state (committed 2026-05-15):
+- `Image` from May 8 stock boot.img (matches device kernel)
+- `dtbo.img` from May 8 stock dtbo.img (passthrough via `INFINITI_DTBO_SOURCE := oem`)
+- `vendor_boot.img` from May 8 stock vendor_boot.img verbatim (passthrough via `BOARD_PREBUILT_VENDORBOOTIMAGE`)
+- 14 board_*.dtb from May 8 stock vendor_boot dtb section
+- 432 *.ko from May 8 stock vendor_dlkm.img ONLY (no system_dlkm or vendor_ramdisk mixing)
+
+Provenance pinned in `device/oneplus/infiniti-kernel/MANIFEST.txt`.
+Path-consistency invariants in `BoardConfigCommon.mk:537-`
+`$(error ...)` if any companion blob is missing — refusing to build
+a hybrid OEM-prebuilt+source-built boot stack (which is the regression
+mode that bit us).
+
+**On the Apr 24 backup** (`dump/infiniti-kernel-apr24-backup/`): KEEP
+for historical record, but **DO NOT use as a recovery target.** It
+shipped a different (older) OEM kernel than your device's current
+installed firmware. Reverting to it would put us back to a worse state
+than the May 8 baseline. The "late April recovery worked" was an
+artifact of the device having been on an older OEM at the time, not a
+known-good configuration to fall back to.
+
+**Backups preserved (persistent, NOT /tmp)**:
+- `/home/jmulesa/android/dump/infiniti-kernel-apr24-backup/` — historical
+  Apr 24 set. **Do not restore from this; it predates current OEM kernel.**
+- `/home/jmulesa/android/dump/infiniti-kernel-may8-source/` — raw May 8
+  unpacked extracts (boot_unpack/, dtbs_split/, vendor_dlkm_extract/,
+  system_dlkm_extract3/, vramdisk/) so future re-refresh doesn't have
+  to re-run EROFS/LZ4/cpio. **THIS is the recovery target if anything
+  goes wrong with infiniti-kernel/.**
+- `/home/jmulesa/android/dump/infiniti-kernel-may8-mixed-pre-trim/` —
+  the broken 669-module flat-mix that caused the regression. Kept as
+  a forensic reference.
+- `/home/jmulesa/android/dump/community_apr13/` — community ground-truth
+  ROM extract for diff comparison. View-only reference; do not use
+  components from it without explicit reason.
+
+**Procedure (for future refreshes):**
+```bash
+SI=/path/to/stock_images_dump
+IK=device/oneplus/infiniti-kernel
+UB=$OUT_HOST/bin/unpack_bootimg
+
+# 1. Kernel + dtbo (direct copy)
+$UB --boot_img $SI/boot.img --out /tmp/k && cp /tmp/k/kernel $IK/Image
+cp $SI/dtbo.img $IK/dtbo.img
+
+# 2. DTBs (split concatenated FDT blob from vendor_boot)
+$UB --boot_img $SI/vendor_boot.img --out /tmp/vb
+python3 device/oneplus/sm8850-common/tools/dtb/split_dtb.py /tmp/vb/dtb /tmp/dtbs
+n=0; for f in /tmp/dtbs/oem-*.dtb; do cp "$f" "$IK/board_${n}.dtb"; n=$((n+1)); done
+
+# 3. Modules (vendor_dlkm: ext2 → 7z; system_dlkm: EROFS → fsck.erofs;
+#    vendor_ramdisk: lz4 cpio)
+mkdir -p /tmp/vdlkm; (cd /tmp/vdlkm && 7z x $SI/vendor_dlkm.img)
+fsck.erofs --extract=/tmp/sysdlkm $SI/system_dlkm.img
+mkdir -p /tmp/vramdisk; (cd /tmp/vramdisk && lz4 -dc /tmp/vb/vendor_ramdisk00 | cpio -idmv)
+rm $IK/*.ko
+cp /tmp/vdlkm/lib/modules/*.ko $IK/
+find /tmp/sysdlkm -name "*.ko" -exec cp {} $IK/ \;
+for f in /tmp/vramdisk/lib/modules/*.ko; do [ ! -f "$IK/$(basename $f)" ] && cp "$f" $IK/; done
+```
+
+---
+
+## Hybrid super.img assembly (build_super_image.py + lpmake direct)
+
+**Surfaced:** 2026-05-15 (Phase 6 hardware bisection;
+"stock-via-our-infra" rabbit hole).
+
+**WON'T-DO 2026-05-15.** Two attempts (`build_super_image.py` with
+`:none:` attrs, then direct `lpmake` with `:readonly:` attrs) both
+produced devices that boot to the AOSP-fallback "android" text
+animation then reboot via Android rescue-party. Stock super assembly
+appears to require additional partition layout details (sizing, group
+layout, slot init) that are hard to reverse-engineer without an
+actual byte-for-byte stock super.img to compare against. User pivoted
+away: "I don't even care if we get stock working through our infra at
+this point."
+
+**OEM-prebuilt path bypasses super assembly entirely** (uses the
+device's existing super partition contents) and is the recommended
+working path. If we ever need to revisit, the LP metadata investigation
+should pick up from: `/tmp/hybrid_v1/super_v2_raw.img` had correct
+`virtual_ab_device` flag, 3 metadata slots, A/B groups, and `readonly`
+attributes — but something about the partition layout still didn't
+match what the bootloader expects. Likely candidates: extents not
+aligned to power-of-2 block boundaries; missing `default` group sizing;
+auto-slot-suffixing layout differences from explicit-suffix layout.
+
+**When to revisit:** Only if a specific need arises (e.g., shipping a
+LineageOS-branded full ROM that includes a custom super.img). Don't
+revisit for diagnostic purposes — use OEM-prebuilt path instead.
+
+---
+
+## Evaluate dtbo construction swap (granular overlays vs merge_dtbs)
+
+**Surfaced:** 2026-05-15 (cross-reference vs OnePlus-SM8850-Development
+upstream sm8850-common; corroborates source-build dtbo rank-1
+suspect from Phase 6 diagnostic).
+
+**Context:**
+Our source-build path produces dtbo.img via `dtboimg.mk` +
+`tools/dtb/select_techpack_dtbos.sh`, packing 11 granular per-techpack
+overlays (~1 MB total). Upstream OnePlus-SM8850-Development
+sm8850-common's source-build path uses
+`BOARD_USES_QCOM_MERGE_DTBS_SCRIPT := true` with
+`TARGET_NEEDS_DTBOIMAGE := true` (whole-tree merge_dtbs script,
+closer to monolithic). Their `android_vendor_lineage` fork has
+relevant patches: "merge_dtbs: Add support for
+TARGET_MERGE_DTBOS_WILDCARD" (Apr 10) and "merge_dtbs: Widen techpack
+search path" (Mar 31). Stock OEM dtbo is 8 monolithic overlays
+(~10 MB).
+
+If our 11 granular overlays fail to apply against canoe-fat at
+bootloader-overlay-apply stage (fdt_overlay), the bootloader proceeds
+with a broken DT and boot fails. This was rank-1 in the May-15
+diagnostic summary but not validated against hardware (Phase 6 is
+currently using OEM-prebuilt path which uses OEM dtbo.img directly).
+
+**Concrete tasks:**
+
+1. Run static `fdtoverlay`-apply test: each of our 11 overlays × 4
+   canoe-fat bases. Any FAIL is a candidate root cause.
+   Script staged at `/tmp/bootdiag/test2_dtbo_apply.sh` (move to
+   `tools/jm2/dtbo_apply_test.sh` if useful).
+
+2. If overlay-apply passes for all 11 × 4: rank-1 hypothesis is
+   refuted, problem is downstream. If any overlay FAILs: fix or
+   exclude it, then test again.
+
+3. If overlay-apply test reveals systematic incompatibility: evaluate
+   swap to upstream merge_dtbs approach. Pull their
+   `android_vendor_lineage` merge_dtbs patches into our `vendor/lineage`
+   fork, configure `BOARD_USES_QCOM_MERGE_DTBS_SCRIPT := true`, build,
+   compare resulting dtbo.img to stock and to our current granular
+   dtbo.img.
+
+**Rationale for deferring:**
+Source-build path concern only. OEM-prebuilt path uses the OEM dtbo
+directly and isn't affected. Schedule when source-build path returns
+to active work.
+
+**When to revisit:** When source-build hardware test resumes (likely
+post-Bucket-B-staging-fix and post-Bucket-C-investigation).
+
+---
+
+## [Task A] Audit proprietary_vendor_oneplus_infiniti for IMEI/RIL completeness
+
+**Surfaced:** 2026-05-15 (community report; preventive).
+
+**Context:**
+Community LineageOS builds for infiniti show generic Qualcomm placeholder
+IMEI, likely from missing RIL config blobs (qcril.db,
+oplus_carrier_pack/, modem firmware) in their vendor blob set. Their
+flash sequence or super.img reconstruction may also touch modem-NV
+partitions (modemst1, modemst2, fsg). Our per-partition flash approach
+doesn't touch these, so we should be safe — but vendor blob completeness
+deserves a check.
+
+**Concrete tasks:**
+
+1. Diff `proprietary_vendor_oneplus_infiniti` from the
+   OnePlus-SM8850-Development org against our vendor blob set.
+   Specifically look for `qcril.db`, `oplus_carrier_pack/`, modem
+   firmware blobs they have that we don't. If theirs is more complete,
+   include the missing blobs in our build.
+
+2. Capture device IMEI before next first-flash:
+   - `fastboot getvar imei` (and `imei1`/`imei2`)
+   - Or pre-flash if device boots: `*#06#` on dialer, or
+     `getprop persist.radio.imei`
+
+   Verify it's the real device IMEI, not generic Qualcomm placeholder.
+   If already a placeholder, IMEI was lost in prior flash attempts and
+   restoration becomes a separate task.
+
+3. Document our flash sequence's modem-NV preservation: ensure
+   `modemst1`, `modemst2`, `fsg` are not in any flash list.
+
+**Rationale for deferring:**
+Preventive, not blocking the boot-failure investigation. Schedule
+before next first-flash on a known-good IMEI device.
+
+**When to revisit:** Before next first-flash sequence on a device
+whose IMEI we want to preserve.
+
+---
+
+## [Task B] Scope DT2W / touch-gesture support in tp_hbp_syna_s3910
+
+**Surfaced:** 2026-05-15 (community report; preventive).
+
+**Context:**
+Community framing: "DT2W requires kernel side change which will be
+implemented once we move to OSS source." We're already source-building
+the kernel + tp_hbp_syna_s3910 (Wave 2D). DT2W enablement may be a
+matter of identifying the right CONFIG flag or sysfs entry, not a
+multi-week implementation.
+
+**Concrete tasks:**
+
+1. In `kernel/oneplus/sm8850-modules/.../oplus_touchscreen_v2/` and
+   the hbp tree: grep for `double_tap`, `dt2w`, `wake_gesture`,
+   `touch_gesture`. Identify the code paths.
+
+2. Check Kconfig for `CONFIG_*_DT2W`-style flags. If present and we
+   haven't set them, add to our config fragment.
+
+3. Look for sysfs entries the driver exposes for gesture enable
+   (typically `/sys/class/touchscreen/.../gesture_enable` or similar).
+
+4. Check device tree for `wakeup-gestures` or similar properties in
+   the touch panel node.
+
+5. Defer actual hardware testing to post-Phase-6. Preparation work
+   (identifying code paths and config flags) can land as a
+   Wave-2-closeout-adjacent item.
+
+**Rationale for deferring:**
+Preventive, not blocking. Worth scoping early since source-build path
+makes it tractable to fix; community framing suggests they consider it
+non-trivial.
+
+**When to revisit:** When source-build path is booting and userspace
+gesture settings work; this is a power-user feature that follows MVB.

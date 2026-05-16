@@ -715,3 +715,121 @@ corpus) is the rigorously-established only path.**
   modules that fail under the current kernel ALL need source-build.
   No subset can be canonicalized via config tweaks.
 
+
+## Re-validation 2026-05-15 — actual B'' measurement
+
+The Path B'' verdict above (2026-05-12, "ZERO of them landed on OEM's
+expected CRC value") was authored against a kernel that was never
+actually rebuilt with the production_profile.config flips applied.
+This section documents the discovery, the proper re-measurement, and
+why the original conclusion still stands now with rigorous evidence.
+
+### Discovery (during Phase 6 boot-failure investigation)
+
+While bisecting the Phase 6 boot failure, IKCONFIG extraction from the
+shipped vmlinux (`out/.../KERNEL_OBJ/vmlinux`, mtime 2026-05-12 15:19)
+revealed all 12 B'' flags were still `=y`:
+
+| Flag | Expected (B'') | Actual in shipped vmlinux |
+|---|---|---|
+| KASAN | not set | `=y` |
+| UBSAN | not set | `=y` |
+| SLUB_DEBUG | not set | `=y` |
+| RANDOMIZE_KSTACK_OFFSET | not set | `=y` |
+| CFI_CLANG | not set | `=y` |
+| HARDENED_USERCOPY | not set | `=y` |
+| KFENCE | not set | `=y` |
+| DEBUG_INFO_BTF | not set | `=y` |
+| KUNIT | not set | `=y` |
+| INIT_STACK_ALL_ZERO | not set | `=y` |
+| SLAB_FREELIST_HARDENED | not set | `=y` |
+| HARDENED_USERCOPY | not set | `=y` |
+
+Mechanism: `production_profile.config` was authored and committed to
+`arch/arm64/configs/`, but **never wired into `TARGET_KERNEL_CONFIG`**
+in `device/oneplus/sm8850-common/BoardConfigCommon.mk`. The build's
+Kbuild config-merge step never saw the fragment, so `.config` content
+matched the dev-baseline. Kbuild correctly reused the existing Image
+(content-identical), and ninja's `Missing restat?` warning surfaced
+the stale-mtime symptom but not the load-bearing root cause.
+
+### Re-measurement procedure
+
+1. Wired `production_profile.config` into `TARGET_KERNEL_CONFIG` as
+   the last fragment (so its `# CONFIG_X is not set` directives
+   override prior fragments).
+2. Forced kernel rebuild via `m bootimage`.
+3. **Pre-flight gate** before trusting any audit result: confirmed
+   - Image mtime advanced (2026-05-12 → 2026-05-15)
+   - IKCONFIG in new vmlinux matches B'' intent (11 of 13 flags
+     correctly flipped to `# is not set`; `LIST_HARDENED` and
+     `DEBUG_KERNEL` stayed `=y` because Kconfig select-chains in
+     other fragments pin them on — exactly as production_profile.config's
+     own docstring predicted)
+4. Ran `tools/jm2/kmi_audit.py` with `--baseline-csv kmi_audit_20260511_path_b_pp.csv`
+   for diff measurement.
+
+### Empirical result
+
+| Metric | Original (May 11, unmeasured) | Re-validation (May 15, measured) |
+|---|---:|---:|
+| OEM corpus audited | 652 (incl. system_dlkm) | 557 (infiniti-kernel only) |
+| `module_layout` CRC match | 95 | 0 |
+| `module_layout` CRC mismatch | 557 | 557 |
+| load-clean | 95 | 0 |
+| load-fail-module-layout | 293 | 557 |
+| Net unlocks (from baseline) | 0 | 0 |
+| Net regressions | 19 (KUnit modules) | 0 |
+
+The 95-vs-0 load-clean delta is methodology, not B'' impact: original
+audit also pulled `$OUT/system_dlkm/lib/modules` which has source-built
+sibling modules counted as load-clean by self-consistency. The
+re-validation intentionally targeted only the OEM-prebuilt corpus
+(infiniti-kernel/) since that's the load-bearing question.
+
+The load-fail-module-layout count is what matters for the convergence
+hypothesis: **557 → 557, zero unlocks**. Path B''s comprehensive flag
+flip moves CRCs around (the May-11 audit measured 7,552 symbol shifts
+of which 0 reached OEM values) but doesn't reach OEM's CRC space.
+
+### Conclusion (now empirically supported, not inferred)
+
+The Phase 2.5 conclusion holds:
+
+- **Config divergence is NOT the cause of OEM-prebuilt CRC divergence.**
+  Even comprehensive 13-flag flip + actually rebuilt + actually shipped
+  kernel produces zero convergence.
+- **ACK patch-level skew is the dominant cause.** Kernel-source
+  divergence between our `android16-6.12-2025-06_r8` and OEM's
+  `android16-5-o-g362117606264` cannot be addressed by config flips.
+- **Path B (full source-build of the OEM corpus) is the path.**
+
+The original conclusion was right in spirit; the measurement that
+"justified" it was unrigorous. This re-validation makes the
+conclusion data-anchored.
+
+### Build artifacts of the re-validation
+
+- Kernel build attempted via `m bootimage` succeeded for vmlinux/Image
+  (mtime 2026-05-15 14:32) but failed at depmod stage: cached
+  source-built vendor_dlkm modules carry stale `__versions` referencing
+  KASAN/HARDENED_USERCOPY symbols the new B''-flipped kernel no longer
+  exports. Exactly the failure mode `production_profile.config`'s
+  docstring predicted. Out-of-scope for the audit measurement (audit
+  only needs Module.symvers, which was produced).
+- Audit CSV: `/tmp/b_pp_audit/kmi_audit_20260515_b_pp_real.csv`
+  (move into repo as `kmi_audit_20260515_b_pp_remeasure.csv` when
+  committed).
+- Audit MD: `/tmp/b_pp_audit/kmi_audit_20260515_b_pp_real.md`.
+
+### Process learning carried forward
+
+The unmeasured B'' was not detectable from the build output alone —
+ninja completed cleanly, the audit script ran cleanly, the conclusion
+was internally consistent. Catching this required IKCONFIG extraction
+from the shipped vmlinux and comparing against the intended .config
+state. This is now codified as a **pre-flight verification gate**
+(`tools/jm2/verify_kernel_config.py`, planned) that any future
+config-fragment work MUST run before any audit is treated as
+load-bearing. See DEFERRED_FOLLOWUPS.md "Pre-flight verification gate
+for config-fragment work" for the implementation specification.

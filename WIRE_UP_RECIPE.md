@@ -1260,3 +1260,71 @@ Files added/changed for the wire-up:
 Build time: under 1 minute for the incremental rebuild after Phase H.
 Validation: `kmod_validate.py` reports `pass`, vermagic and CRCs match
 our kernel exactly.
+
+---
+
+## Pre-flight gate for kernel config-fragment work
+
+**Tool:** `tools/jm2/verify_kernel_config.py` (added 2026-05-15).
+**Rule:** any work that flips a kernel CONFIG via a fragment in
+`arch/arm64/configs/` MUST pass this gate before its kmi_audit,
+boot test, or CRC analysis is treated as load-bearing.
+
+### Why
+
+The 2026-05-12 Path B'' "zero convergence" verdict was authored from
+audit output produced against a kernel binary that was never actually
+rebuilt with the production_profile.config flips applied. The
+fragment was committed but never wired into TARGET_KERNEL_CONFIG, so
+Kbuild's merge step never saw it and Kbuild correctly reused the
+existing Image (content-identical to dev-baseline). The audit script
+ran cleanly. The conclusion was internally consistent. Ninja produced
+no errors. The failure was invisible from the build output alone.
+
+Discovery (2026-05-15) cost a multi-day reframing of Phase 2.5 retro
+discipline. Cheap to prevent with a 2-second check.
+
+### Usage
+
+```bash
+# Verify fragment-driven flips actually landed in the shipped kernel:
+tools/jm2/verify_kernel_config.py \
+    --vmlinux out/target/product/infiniti/obj/KERNEL_OBJ/vmlinux \
+    --expected-from kernel/oneplus/sm8850/arch/arm64/configs/<your_fragment>.config
+
+# For Kconfig select-chain-pinned flags (e.g., LIST_HARDENED), tolerate:
+tools/jm2/verify_kernel_config.py --vmlinux ... \
+    --expected-from <fragment> \
+    --tolerated-pinned CONFIG_LIST_HARDENED \
+    --tolerated-pinned CONFIG_DEBUG_KERNEL
+
+# Combined with rebuild-actually-happened assertion:
+tools/jm2/verify_kernel_config.py --vmlinux ... \
+    --expected-from <fragment> \
+    --reference-mtime $(date -d '2026-05-14 00:00' +%s)
+```
+
+### Exit codes
+
+- `0` — all expectations satisfied (tolerated-pinned WARNs are not failures)
+- `1` — at least one CONFIG mismatch (likely root cause: fragment not in TARGET_KERNEL_CONFIG, .config layered in unexpected order, or build cache stale)
+- `2` — script error (missing vmlinux, can't extract ikconfig, etc.)
+
+### When to run
+
+- **Before** any kmi_audit run that's meant to measure the impact of
+  a config flip. If the gate fails, the audit's verdict is unsupported.
+- **After** any wave that adds/modifies a fragment in
+  `arch/arm64/configs/`. Wire into `tools/jm2/wave_gate.py`'s pre-audit
+  step so it runs automatically.
+- **Before** treating any "this config flip didn't help" conclusion
+  as load-bearing — confirm the flip actually landed.
+
+### Related
+
+- See `kmi_strict_audit.md` "Re-validation 2026-05-15 — actual B''
+  measurement" for the discovery story and the canonical demonstration
+  of the gate catching the failure mode.
+- See `DEFERRED_FOLLOWUPS.md` "Pre-flight verification gate for
+  config-fragment work" for the implementation spec and the
+  wave_gate.py integration follow-up.

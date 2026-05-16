@@ -30,6 +30,31 @@ image. The six-phase plan that took the unresolved-symbol count from
 110 → 0 is summarized below; commit messages on this branch hold the
 detail.
 
+## Phase 6 status (2026-05-15)
+
+Active session retro: `waves/phase_6_session_2026_05_15.md`. TL;DR:
+
+- **OEM-prebuilt path** — refreshed `device/oneplus/infiniti-kernel/`
+  from device's current May-8 stock state (was Apr-24 from CPH2745;
+  669 .ko vs prior 557, 14 DTBs vs prior 8). Build via
+  `~/android/iter_brunch_fallback.sh` for hardware test.
+- **Source-build path** — discovered `BOARD_VENDOR_RAMDISK_KERNEL_MODULES`
+  is unset, so 40 of 97 first-stage modules (including critical
+  `ufs_qcom.ko`) never make it into the vendor_ramdisk. Fix is one
+  line in `BoardConfigCommon.mk`. **Required for any future
+  source-build hardware test.** See DEFERRED_FOLLOWUPS.md.
+- **Phase 2.5 Path B''** — re-validated 2026-05-15 with the
+  fragment actually wired in; zero convergence confirmed with proper
+  measurement. Original conclusion stands but is now empirically
+  supported, not inferred. See `kmi_strict_audit.md` "Re-validation
+  2026-05-15".
+- **Pre-flight gate** — codifying the IKCONFIG-mtime check that
+  caught the unmeasured B''. See DEFERRED_FOLLOWUPS.md "Pre-flight
+  verification gate for config-fragment work".
+- **Backlog**: `DEFERRED_FOLLOWUPS.md` for full list. Highest-leverage
+  pending: pre-flight gate, BOARD_VENDOR_RAMDISK_KERNEL_MODULES fix,
+  BOARD_BOOTCONFIG gunyah, OEM-prebuilt hardware retest.
+
 ## Source-built external modules
 
 Order matters: vendor/lineage's `kernel.mk` builds `TARGET_KERNEL_EXT_MODULES`

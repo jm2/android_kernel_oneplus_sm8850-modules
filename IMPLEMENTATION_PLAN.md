@@ -888,6 +888,25 @@ pre-flight the tool shape, run the analysis, produce
 data. Retrospective lands in the audit doc itself rather than in
 `wave_02_status.md` (this isn't a Wave 2 sub-wave).
 
+### 2.5.7 Re-validation 2026-05-15
+
+The original Path B'' "verdict" was authored against a kernel binary
+that had never actually been rebuilt with `production_profile.config`
+applied (the fragment was committed but never wired into
+`TARGET_KERNEL_CONFIG`). The IKCONFIG-vs-intended-config mismatch was
+discovered during Phase 6 boot-failure investigation. Re-validation
+2026-05-15 wired the fragment in, forced rebuild, IKCONFIG-verified
+the flips actually landed in the shipped kernel, and re-ran the audit:
+**zero convergence confirmed with a real measurement**. Phase 2.5's
+"Path B is the path" conclusion now stands on data, not inference.
+
+The unmeasured-binary failure mode is now codified as a pre-flight
+verification gate (`tools/jm2/verify_kernel_config.py`, planned;
+DEFERRED_FOLLOWUPS.md "Pre-flight verification gate for config-fragment
+work"). Any future config-fragment work MUST pass this gate before its
+audit results are treated as load-bearing. Full evidence trail:
+kmi_strict_audit.md "Re-validation 2026-05-15 — actual B'' measurement".
+
 ---
 
 ## Wave 2 closeout direction (post-2I, 2026-05-11) — paused at Phase 2.5
