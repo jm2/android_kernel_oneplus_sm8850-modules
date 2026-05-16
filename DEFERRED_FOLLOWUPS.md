@@ -907,28 +907,30 @@ Path-consistency invariants in `BoardConfigCommon.mk:537-`
 a hybrid OEM-prebuilt+source-built boot stack (which is the regression
 mode that bit us).
 
-**On the Apr 24 backup** (`dump/infiniti-kernel-apr24-backup/`): KEEP
-for historical record, but **DO NOT use as a recovery target.** It
-shipped a different (older) OEM kernel than your device's current
-installed firmware. Reverting to it would put us back to a worse state
-than the May 8 baseline. The "late April recovery worked" was an
-artifact of the device having been on an older OEM at the time, not a
-known-good configuration to fall back to.
+**Recovery target for `device/oneplus/infiniti-kernel/`**: the
+device's own firmware dump at `dump/stock_images/`. The
+`MANIFEST.txt` inside `device/oneplus/infiniti-kernel/` documents
+the per-blob extraction procedure (which partition each blob comes
+from, which tool extracts each — note that vendor_dlkm.img is ext2
+and needs 7z not fsck.erofs). Per-blob SHA256s are pinned in the
+manifest. Git history at the jm2 fork
+(https://github.com/jm2/android_device_oneplus_infiniti-kernel)
+preserves every refresh as a commit.
 
-**Backups preserved (persistent, NOT /tmp)**:
-- `/home/jmulesa/android/dump/infiniti-kernel-apr24-backup/` — historical
-  Apr 24 set. **Do not restore from this; it predates current OEM kernel.**
-- `/home/jmulesa/android/dump/infiniti-kernel-may8-source/` — raw May 8
-  unpacked extracts (boot_unpack/, dtbs_split/, vendor_dlkm_extract/,
-  system_dlkm_extract3/, vramdisk/) so future re-refresh doesn't have
-  to re-run EROFS/LZ4/cpio. **THIS is the recovery target if anything
-  goes wrong with infiniti-kernel/.**
-- `/home/jmulesa/android/dump/infiniti-kernel-may8-mixed-pre-trim/` —
-  the broken 669-module flat-mix that caused the regression. Kept as
-  a forensic reference.
-- `/home/jmulesa/android/dump/community_apr13/` — community ground-truth
-  ROM extract for diff comparison. View-only reference; do not use
-  components from it without explicit reason.
+**On older / scratch dirs that previously existed under `dump/`**:
+- `infiniti-kernel-apr24-backup/`, `infiniti-kernel-may8-source/`,
+  `infiniti-kernel-may8-mixed-pre-trim/`, `hybrid-super-experiments/`
+  were stripped 2026-05-16 after this entry was resolved. Their
+  content is either preserved in git history (apr24 baseline is in
+  the jm2 fork's commit log as `f8a6b24 Initial prebuilts from
+  CPH2745_16.0.3.503(EX01)` lineage), or no longer needed (mixed-pre-trim
+  was forensic; hybrid-super was a won't-do experiment).
+
+**Still kept** under `dump/`:
+- `stock_images/` — the device's May 8 firmware dump, source of truth
+  for any future infiniti-kernel/ refresh.
+- `community_apr13/` — community ground-truth ROM extract, retained
+  as VIEW-ONLY reference for future diff comparisons.
 
 **Procedure (for future refreshes):**
 ```bash
