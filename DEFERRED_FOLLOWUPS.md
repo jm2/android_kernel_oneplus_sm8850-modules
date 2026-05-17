@@ -1221,3 +1221,74 @@ wave alongside the pre-flight verification gate.
 (specifically: if mmrm-driver or synx-kernel get their currently-commented
 lines uncommented, OR if new external Qualcomm module trees are added
 to `vendor/qcom/opensource/`).
+
+---
+
+## Evaluate Option B: switch audio HAL to source-built (drop OEM audio prebuilts)
+
+**Surfaced:** 2026-05-17 (Phase 4 `extract_v1` build hit Soong namespace
+collision on `audioeffectservice_qti.xml` + `manifest_audiocorehal_default.xml`
+because `hardware/qcom-caf/sm8850/audio/primary-hal/hal/` source-builds the
+same module names that our extracted OEM prebuilts ship).
+
+**Context:**
+The immediate fix (Option A, landed 2026-05-17) was to disable the
+`hardware/qcom-caf/sm8850` source-built VINTF manifest prebuilts so our
+extracted v3 OEM manifests win, matching our `extract-files.py`
+`replace_needed audio.common-V1-ndk → V3-ndk` HAL fixups. This preserves
+the OEM audio HAL stack (libaudiocorehal.qti.so + patched NDK deps) at the
+cost of making source-built `libaudiocorehal.default.so` dead code in
+vendor.img. Replay-patch at
+`device/oneplus/sm8850-common/patches/hardware-qcom-caf-sm8850-audio-vintf-disable.patch`.
+
+Option B is the more principled alternative — use the source-built audio
+HAL throughout, drop OEM audio prebuilts. Symmetric with Action A from
+the 2026-05-17 extract.py-driven rebuild (drop OEM camera AIDL NDK
+prebuilts, use AOSP source-build).
+
+**Concrete tasks:**
+
+1. Drop `vendor/etc/vintf/manifest/audioeffectservice_qti.xml` and
+   `manifest_audiocorehal_default.xml` from
+   `device/oneplus/sm8850-common/proprietary-files.txt` (revert Action B
+   of the 2026-05-17 extract.py-driven rebuild — commit `efc1581`).
+
+2. Re-enable the two `prebuilt_etc` entries in
+   `hardware/qcom-caf/sm8850/audio/primary-hal/hal/{default,effects}/Android.bp`
+   (remove `enabled: false`). Use `patch -R` on the replay-patch.
+
+3. Revert audio-related blob_fixups in
+   `device/oneplus/sm8850-common/extract-files.py`:
+   - `vendor/lib64/hw/libaudiocorehal.qti.so` `replace_needed` entries
+     (sounddose V1→V2, common V1→V3, libaudio_aidl_conversion → _prebuilt)
+   - `vendor/lib64/hw/android.hardware.bluetooth.audio_sw.so` +
+     `libaudioserviceexampleimpl.so` shared `replace_needed`
+   - `vendor/lib64/android.hardware.bluetooth.audio-impl_prebuilt.so`
+   - `vendor/lib64/libaudio_aidl_conversion_common_ndk_prebuilt.so`
+   - 6 `soundfx/lib*aidl.so` entries
+   - `vendor/lib64/libwfdmmsrc_proprietary.so` (audio.common V2→V3)
+
+4. Audit and remove OEM audio HAL .so blobs from `proprietary-files.txt`
+   that are redundant with source-built equivalents (`libaudiocorehal.qti.so`
+   etc.). Determine which OEM-specific audio behaviors live in OEM blobs
+   that would be lost — e.g., OPlus-specific audio policy hooks, tuning.
+   Likely require keeping some OEM blobs and only dropping the core HAL.
+
+5. Test on hardware: build, flash, validate audio works (incoming/outgoing
+   calls, music playback, notifications, ringer, mic recording, BT audio).
+   Source-built HAL may not cover all OEM-specific audio features.
+
+6. If validation passes, this is the more durable choice — removes
+   un-tracked `hardware/qcom-caf` edits and aligns with the "preserve
+   source-built efforts" principle.
+
+**Rationale for deferring:**
+Option A unblocks Phase 4 build in minutes. Option B requires substantial
+analysis (which OEM blobs encode policy vs which are pure HAL glue),
+fixup unwinding, and on-device validation of source-built audio against
+OEM expectations. Risk of audio regressions is non-trivial. Schedule
+when we have a known-bootable Option-A baseline to A/B against.
+
+**When to revisit:** After a bootable Option-A baseline lands and is
+flash-validated. The known-good baseline enables clean A/B testing of
+audio quality between OEM-prebuilt and source-built variants.
