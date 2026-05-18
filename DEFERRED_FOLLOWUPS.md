@@ -1292,3 +1292,72 @@ when we have a known-bootable Option-A baseline to A/B against.
 **When to revisit:** After a bootable Option-A baseline lands and is
 flash-validated. The known-good baseline enables clean A/B testing of
 audio quality between OEM-prebuilt and source-built variants.
+
+---
+
+## extract-utils write_mk_firmware_ab_partitions iterates ALL firmware files, not just AB ones
+
+**Surfaced:** 2026-05-18 (Phase 4 extract_v25 target_files packaging step
+asserted "Failed to find GloveDetect.img" — GloveDetect.tflite is a
+touchscreen firmware config file, not a partition image).
+
+**Context:**
+`tools/extract-utils/extract_utils/makefiles.py` `write_mk_firmware_ab_partitions`:
+
+    def write_mk_firmware_ab_partitions(files: Iterable[File], out: TextIO):
+        has_ab = False
+        for file in files:
+            if FileArgs.AB in file.args:
+                has_ab = True
+                break
+        if not has_ab:
+            return
+        out.write('\nAB_OTA_PARTITIONS +=')
+        for file in files:          # bug: iterates ALL files, not filtered to AB-flagged
+            line = f' \\\n    {file.root}'
+            out.write(line)
+
+Once any single file in the firmware proprietary file list has the `;AB`
+flag, every other file in the list gets added to AB_OTA_PARTITIONS —
+regardless of its own flags. For infiniti, our `proprietary-firmware.txt`
+has real AB partitions (abl.img;AB, aop.img;AB, etc.) which trips
+`has_ab = True`, then extract-utils adds 17 touchscreen firmware files
+(GloveDetect.tflite, libafe_s3910.so, model.tflite, vnd_*.xml, etc.) as
+false-positive AB partitions. The build then dies in target_files
+packaging when it tries to find `GloveDetect.img` (and the others).
+
+**Workaround in place (2026-05-18):**
+`~/android/dump/extract_safely.sh` post-extract step strips the 19 known
+false-positive entries from
+`vendor/oneplus/infiniti/BoardConfigVendor.mk`. Durable as long as the
+wrapper is always used (memory note `reference_extract_workflow.md`
+already enforces this).
+
+**Concrete tasks:**
+
+1. Confirm the bug upstream by reading current LineageOS HEAD of
+   `tools/extract-utils/extract_utils/makefiles.py` — verify the loop
+   isn't filtered.
+
+2. Submit upstream patch: filter the loop to AB-flagged files only:
+   ```python
+   for file in files:
+       if FileArgs.AB not in file.args:
+           continue
+       line = f' \\\n    {file.root}'
+       out.write(line)
+   ```
+
+3. Confirm fix doesn't regress on other LineageOS devices (some may
+   rely on the current behavior — though that would be a separate bug).
+
+4. After upstream lands and we sync, remove the post-extract workaround
+   from `extract_safely.sh`.
+
+**Rationale for deferring:**
+Workaround unblocks Phase 4 build today. Upstream fix is preventive and
+benefits all LineageOS devices, but doesn't materially change our
+flash-readiness timeline.
+
+**When to revisit:** Next time we sync repo (would lose our local
+extract-utils edit if we patched in-tree; better to upstream).
