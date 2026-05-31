@@ -1226,6 +1226,14 @@ to `vendor/qcom/opensource/`).
 
 ## Evaluate Option B: switch audio HAL to source-built (drop OEM audio prebuilts)
 
+**SUPERSEDED 2026-05-30 by the sm8850-devs convergence.** `audio/primary-hal` now
+tracks the org `jm2/android_hardware_qcom_audio-ar` fork, which is **configs-only**
+(`configs/canoe`, no `hal/` source). There is no source-built audio HAL to switch to,
+so Option B is off the table; audio is supplied by the OEM v3 prebuilts via
+`proprietary-files.txt`, and the Option-A `audio-vintf-disable.patch` is **dropped**
+(nothing to patch). See `device/oneplus/sm8850-common/README.md` "Audio". The
+historical context below is kept for the record.
+
 **Surfaced:** 2026-05-17 (Phase 4 `extract_v1` build hit Soong namespace
 collision on `audioeffectservice_qti.xml` + `manifest_audiocorehal_default.xml`
 because `hardware/qcom-caf/sm8850/audio/primary-hal/hal/` source-builds the
