@@ -1439,3 +1439,49 @@ the next extract.py invocation.
 **When to revisit:** Before the next `extract_safely.sh` invocation,
 OR sooner if other vendor proprietary churn (Tier 3 .so additions, etc.)
 triggers a re-extract.
+
+---
+
+## WiFi: byte-reversed WLAN MAC — fix needs a source-built cnss2 (2026-06-04)
+
+The converged canoe build BOOTS; WiFi is the one remaining break. Root-caused
+on-device (rooted adb, driver reload + dmesg):
+
+**Root cause:** the WLAN DMS MAC arrives **byte-reversed**. Device WLAN MAC =
+`c3:bb:04:bc:ed:78` = reverse of the real `78:ED:BC:04:BB:C3` (= Bluetooth MAC +1,
+the standard WLAN=BT+1). Reversed, first octet `0xC3` has the **multicast bit set**, so
+`qcacld-3.0` `__wlan_hdd_validate_mac_address()` (core/hdd/src/wlan_hdd_main.c:1673)
+rejects it -> cnss `Failed to probe host driver, err = -1` (platform/cnss2/pci.c:3492) ->
+no `wlan0`. OnePlus's `OPLUS_FEATURE_WIFI_MAC` reverses the MAC back only on the FW path
+(`cnss_wlfw_wlan_mac_req_send_sync`, qmi.c:1648-1650), leaving the qcacld-facing
+`dms.mac` reversed. Only bites units whose real MAC ends in an odd octet (ours: C3);
+even-ending units pass validation -- the "works on some devices, not ours" split.
+RULED OUT (with evidence): orange/unlocked state (community works unlocked); soft-SKU
+`cnss_softsku_peach.pfm` (stand-in loaded + sent to FW -> probe still failed identically);
+TME err 83 benign (tmel_peach_*.elf present).
+
+**Fix (cnss2 source patch):** make the MAC byte-order consistent so qcacld gets the valid
+unicast MAC -- e.g. in `cnss_qmi_get_dms_mac` (platform/cnss2/qmi.c:4150) de-reverse
+`plat_priv->dms.mac` when its first octet has the multicast bit set, reconciled with the
+OPLUS WLFW-path reversal so the FW still gets the correct MAC. Finalize spot/condition
+with build+test.
+
+**Blocked on the source-kernel build** (prebuilt stock-OOS kernel can't load a patched
+module: vermagic + CONFIG_MODVERSIONS CRC mismatch; prebuilt SHA b065695cf38 not in our
+source). Source-build scoping (USE_PREBUILT_KERNEL=false):
+- canoe config wiring DONE (sm8850-common BoardConfig: TARGET_KERNEL_CONFIG ->
+  vendor/canoe_perf.config; module-list refs -> .msm/.oplus.canoe). Build now reaches the
+  real kernel compile.
+- Remaining (the real work, NOT naming): (1) TOOLCHAIN -- kernel won't build with the
+  platform Clang (`-Werror,-Wdefault-const-init-field-unsafe` at asm-offsets); canoe is a
+  kleaf/bazel kernel needing its pinned toolchain, not the legacy `mka kernel` path.
+  (2) DT bindings missing (`bindings/qcom,audio-ext-clk.h`) + devicetrees repo unsynced.
+  (3) Combined-module-list wiring -- canoe ships one `modules-lists/modules.list.msm.canoe`
+  (133 mods), not per-partition load lists, so current load lists are empty (compiles,
+  won't boot). (4) KMI-strict CRCs.
+
+**Rationale for deferring:** device is a usable daily-driver minus WiFi; the kernel build
+is a multi-phase project for one feature. Full context in agent memory
+`project_jun03_wifi_softsku_rootcause`.
+
+**When to revisit:** when committing to the source-kernel (kleaf) build.
