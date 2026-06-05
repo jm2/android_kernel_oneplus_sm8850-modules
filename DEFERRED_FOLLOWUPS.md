@@ -1472,16 +1472,36 @@ source). Source-build scoping (USE_PREBUILT_KERNEL=false):
 - canoe config wiring DONE (sm8850-common BoardConfig: TARGET_KERNEL_CONFIG ->
   vendor/canoe_perf.config; module-list refs -> .msm/.oplus.canoe). Build now reaches the
   real kernel compile.
-- Remaining (the real work, NOT naming): (1) TOOLCHAIN -- kernel won't build with the
-  platform Clang (`-Werror,-Wdefault-const-init-field-unsafe` at asm-offsets); canoe is a
-  kleaf/bazel kernel needing its pinned toolchain, not the legacy `mka kernel` path.
-  (2) DT bindings missing (`bindings/qcom,audio-ext-clk.h`) + devicetrees repo unsynced.
-  (3) Combined-module-list wiring -- canoe ships one `modules-lists/modules.list.msm.canoe`
-  (133 mods), not per-partition load lists, so current load lists are empty (compiles,
-  won't boot). (4) KMI-strict CRCs.
+CORRECTION (2026-06-04, after reading all sm8850/sm8850-modules MDs in full): my first pass
+mis-scoped this. This build IS `mka kernel`/Kbuild (the whole fork translates the OEM Bazel
+specs to Kbuild for `mka kernel` — README.lineage.md, README.md, IMPLEMENTATION_PLAN §2,
+WIRE_UP_RECIPE). It is NOT a Kleaf-direct or from-scratch project; the kernel @ 49797ea already
+compiles clean via `mka kernel` + system clang 22 (Phase-5 Wave-2, ~69.7% boot prediction,
+0 depmod errors, DTBs composed in-tree Phase G). My scoping build hit RAW failures only because:
+  (a) the May-30 convergence overwrote the canoe BoardConfig wiring with the org's `pineapple`
+      config (device tree) — fixed by the pineapple->canoe edit (dc40ce1);
+  (b) I built WITHOUT the known `-Werror` suppression. `-Wdefault-const-init-field-unsafe` is a
+      clang-21+ diagnostic (clang 22 stricter than OEM clang) — a routine class the project
+      already demotes with `-Wno-error=default-const-init-field-unsafe` (WIRE_UP_RECIPE Step 7.7);
+      mainline disables it kernel-wide in KBUILD_CFLAGS. My asm-offsets hit just needs the same
+      one-line suppression in the kernel, NOT a different toolchain.
+REAL remaining blockers for a BOOTABLE source kernel (per the docs, NOT toolchain/Kleaf):
+  (1) KMI-strict CRC parity — OEM prebuilts fail module_layout CRC vs our kernel (557/557, ACK
+      patch-level skew r8 vs OEM o) → source-build the modules.load tail (Path B).
+  (2) one-line BOARD_VENDOR_RAMDISK_KERNEL_MODULES fix to stage ufs_qcom.ko first-stage (never
+      landed → can't mount rootfs); see phase_6_session_2026_05_15.md.
+  (3) per-partition module-load-list wiring — canoe ships the combined modules-lists/
+      modules.list.msm.canoe (133 mods) + blocklists, NOT the per-partition .list.{msm,oplus}.canoe
+      that BoardConfig reads (those are genuinely absent in the kernel root; my rename left them
+      empty — compiles, won't boot until rewired).
+  (4) DT-bindings: my scope build failed on `bindings/qcom,audio-ext-clk.h` for canoe-audio.dtsi
+      despite Phase-G fat.dts present — to reconcile with the Phase-G include-path setup (likely a
+      sync/invocation gap in my attempt, not a missing repo).
+The source kernel has never been confirmed BOOTING (Phase 6 hw tests used the PREBUILT kernel).
 
-**Rationale for deferring:** device is a usable daily-driver minus WiFi; the kernel build
-is a multi-phase project for one feature. Full context in agent memory
-`project_jun03_wifi_softsku_rootcause`.
+**Rationale for deferring:** device is a usable daily-driver minus WiFi; finishing the source
+kernel (KMI tail + first-stage staging) is a multi-phase continuation. Full context in agent
+memory `project_jun03_wifi_softsku_rootcause`.
 
-**When to revisit:** when committing to the source-kernel (kleaf) build.
+**When to revisit:** when continuing the documented `mka kernel` source-build waves (KMI Path B
++ ufs_qcom first-stage staging), then apply the cnss2 MAC patch.
