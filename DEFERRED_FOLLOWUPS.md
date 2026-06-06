@@ -1503,5 +1503,22 @@ The source kernel has never been confirmed BOOTING (Phase 6 hw tests used the PR
 kernel (KMI tail + first-stage staging) is a multi-phase continuation. Full context in agent
 memory `project_jun03_wifi_softsku_rootcause`.
 
-**When to revisit:** when continuing the documented `mka kernel` source-build waves (KMI Path B
-+ ufs_qcom first-stage staging), then apply the cnss2 MAC patch.
+**When to revisit:** SUPERSEDED 2026-06-05 — the source-kernel route pivoted from hand-Kbuild to
+the OEM **Kleaf** `canoe_perf_dist` path (builds the OEM's exact kernel → fixes the KMI skew that
+blocked the Kbuild route, and uses the OEM's pinned clang 19 → no `-Werror` friction). The cnss2
+MAC patch will be applied on the OEM Kleaf tree. See `KLEAF_PIVOT.md` (this dir). The Kbuild waves
+(KMI Path B + ufs_qcom staging) are parked, not deleted.
+
+---
+
+## Generalize the Kleaf source-build path into per-device tooling (2026-06-05)
+
+The OEM-Kleaf route (`KLEAF_PIVOT.md`) is mostly upstream already (`kernel.mk` Kleaf path). To make
+future-device kernel bring-up "import + pin snapshot + 4 BoardConfig vars" instead of a build-system
+rewrite, build: (1) a kernel_platform importer (OEM superproject → sibling `kernel-<ver>` `repo`
+layout + manifest; platform codename = ONE guarded parameter — cf. the `klsplit.py` sketch from the
+Opus-Web session); (2) a wiring generator (parse `build.config.msm.<plat>` + `target_variants.bzl`
+→ BoardConfig block + `device.bazelrc` + manifest); (3) a snapshot pinner (deployed kernel
+SHA/build-date/OOS tag → OEM "Synchronize code for…" snapshot commit); (4) a defconfig-fragment
+shim (LOS data → Starlark `pre/post_defconfig_fragments`). Full notes in `KLEAF_PIVOT.md`
+§generalization. Defer until the canoe Kleaf build is proven end-to-end.
