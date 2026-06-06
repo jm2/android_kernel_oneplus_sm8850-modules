@@ -137,3 +137,46 @@ became) to "import + pin snapshot + 4 BoardConfig vars," hours not weeks.
 - Setup cost: large sibling sync + vendored prebuilts.
 - Sets aside the Kbuild wave investment (acceptable — it built the wrong base, never booted;
   sunk cost is a bias).
+
+---
+
+## Concrete findings — snapshot SHAs + offline sync recipe (2026-06-06)
+
+**Snapshot pin (step a) — CORRECTED for CPH2749 (the device).** Region prefixes interleave on the
+one branch: CPH2745/CPH2747 = India/Export, **CPH2749 = our export/NA device**, PLK110 = China.
+- **Latest CPH2749 = `16.0.7.202(EX01)` (2026-06-03) = branch HEAD = what we synced.** SHAs:
+  common `d9053b907db4`, msm/soc-repo `5d3c0aadefa2`, superproject `307d23721d20`
+  (QCOM tag `android16-6.12-2025-06_r53`).
+- CPH2749 published track: `16.0.2.401` (Feb 3, common `16099f8ab4cc`) → `16.0.3.503` (Feb 10,
+  common `227664cbe007`) → `16.0.7.202` (Jun 3, HEAD). **There is NO CPH2749 16.0.5.x** — the only
+  16.0.5.x is `PLK110_16.0.5.701` (China-only, `a554b51`); don't use it.
+- Our DEPLOYED kernel (OOS 11.A.40, ~Dec 2025 GKI build `gb2a876903b49`) PREDATES every published
+  CPH2749 snapshot (earliest = Feb's 16.0.2.401) — so an exact deployed-match isn't obtainable
+  publicly. → Build the LATEST (`16.0.7.202`, the synced HEAD) and likely RE-EXTRACT the vendor
+  partition from 16.0.7.202 too, for a clean current coherent base. The scmversion SHAs
+  (`b2a876903b49`/`eb065695cf38`) are GKI/OEM-internal, not addressable here.
+- CRC `module_layout` parity must be verified EMPIRICALLY (build → `modinfo -F vermagic` + module
+  load vs the on-device set). GKI KMI is stable within android16-6.12, so a 16.0.7.202 kernel +
+  its own source-built modules should be self-consistent and vendor-compatible — confirm on boot.
+
+**Sync recipe (step b) — DONE/in progress:** synced to **`/run/media/jmulesa/lineage/android/kernel-6.12`**
+(= `$(BUILD_TOP)/../kernel-6.12`, the sibling location kernel.mk expects with `TARGET_KERNEL_VERSION:=6.12`):
+```
+repo init -u https://github.com/OnePlusOSS/kernel_manifest -b oneplus/sm8850 -m oneplus_15.xml
+repo sync -c -j6 --no-tags --no-clone-bundle
+```
+- Manifest pins the 3 OnePlus repos to the MOVING branch (HEAD = 16.0.7.201, Jun 3) → after sync,
+  `git checkout` the bracketing snapshot in each: common → `kernel_platform/common`, msm →
+  `kernel_platform/soc-repo`, superproject → repo root (`./`).
+- TOOLCHAIN VENDORED (offline build confirmed): clang **r536225 / 19.0.1** (exact match to
+  deployed) at `kernel_platform/prebuilts/clang/host/linux-x86/clang-r536225`; bazel 8.0.0 at
+  `kernel_platform/prebuilts/kernel-build-tools/bazel/linux-x86_64/bazel`. `network.bazelrc`
+  defaults `--config=no_internet`. No submodules, no LFS — plain checkouts. ~10-15 GB.
+- OEM build helper: `./kernel_platform/oplus/build/oplus_build_kernel.sh canoe perf` (wraps
+  `tools/bazel run //…:canoe_perf_dist`). NOTE: the msm-kernel maps to `kernel_platform/soc-repo`,
+  so the bazel package label may be `//soc-repo:canoe_perf_dist` (and `TARGET_KERNEL_SOURCE` the
+  in-platform path to the build rules) — confirm at step (c) via `tools/bazel query`.
+
+**Provenance of this section:** two research sub-agents (kernel.mk Kleaf path + OnePlusOSS drop;
+then snapshot/manifest pin) cross-checked against live OnePlusOSS/`gh` + CLO-LA GitLab, plus the
+device `/proc/version`. Sync kicked 2026-06-06.
