@@ -1522,3 +1522,52 @@ Opus-Web session); (2) a wiring generator (parse `build.config.msm.<plat>` + `ta
 SHA/build-date/OOS tag → OEM "Synchronize code for…" snapshot commit); (4) a defconfig-fragment
 shim (LOS data → Starlark `pre/post_defconfig_fragments`). Full notes in `KLEAF_PIVOT.md`
 §generalization. Defer until the canoe Kleaf build is proven end-to-end.
+
+---
+
+## eSIM provisioning fails at ES10b.LoadBoundProfilePackage (eUICC SW=6A88)
+
+**Surfaced:** 2026-06-07 (OpenEUICC LPA bring-up; two attempts with a standard data-only **Google Fi**
+eSIM, byte-identical failure).
+
+**Context:** OpenEUICC is deployed and working as the device LPA (see
+`device/oneplus/sm8850-common/README.md` "eSIM LPA") — the SIM/eSIM menu, LPA binding, eUICC reads,
+and the entire network download phase all succeed. SM-DP+ `gtm.pr.go-esim.com` returns
+`functionExecutionStatus: Executed-Success` + the full `boundProfilePackage` (over the gnirehtet USB
+reverse-tether). It then fails at the **final on-chip write**, `ES10b.LoadBoundProfilePackage`:
+`ProfileDownloadException(lpaErrorReason=ES10B_ERROR_REASON_UNDEFINED)`, last APDU **SW=6A88**
+("referenced data not found"). eUICC rolls back clean (`mProfiles=[]`; no stuck ISD-P). Deterministic
+across both attempts → NOT transient and NOT an exotic profile (data-only Fi = standard SGP.22).
+KEY FINDING — **OMAPI/SecureElement access to the eUICC is non-functional on this port.** OpenEUICC
+logs `OMAPI APDU interface unavailable` for every ISD-R AID on physical slot 0, then "channel
+invalid... slot might be broken," and falls back to the **modem RIL path**
+(`RILJ: SIM_TRANSMIT_APDU_CHANNEL [PHONE1]`; eUICC found on slot 1 port 0). READS over RIL work
+(GetEID, GetProfilesInfo); the large BPP **WRITE** does not. RILJ redacts APDU payload+SW (even on
+userdebug) so the exact failing STORE DATA segment isn't visible (~60 APDUs over ~31s → fail). The
+SecureElement HALs ARE registered (`ISecureElement/SIM1,SIM2,eSE1` + OMAPI
+`ISecureElementService/default`), so the gap is reader→eUICC mapping / ARA-M access, not a missing HAL.
+
+**Concrete tasks:**
+
+1. **Fix the OMAPI/SecureElement path to the eUICC (likely the real fix).** Identify which reader
+   (SIM1/SIM2/eSE1) backs the embedded eUICC and why OpenEUICC can't open a valid ISD-R logical
+   channel over OMAPI (ARA-M access rules / SE-HAL reader config / refresh tag). If OMAPI reaches the
+   eUICC, OpenEUICC uses the SE path — the one designed for profile writes — and the BPP install
+   should complete instead of going through the RIL path.
+2. Rebuild OpenEUICC with lpac APDU debug (libeuicc debug / instrument the Kotlin AndroidApduChannel)
+   to capture the exact failing STORE DATA segment + the chip's full response — distinguishes a
+   segment size/format issue (possible lpac-side chunking workaround) from a hard write limitation.
+3. If it is RIL-path-only: investigate the OEM RIL `SIM_TRANSMIT_APDU_CHANNEL` handling of large
+   ISD-R writes / extended-length APDUs (modem/RIL-level).
+
+**Rationale for deferring:** the LPA bring-up is a real durable win (dead menu → working GMS-free LPA
+wired into `PRODUCT_PACKAGES`). The remaining blocker is an eUICC-access-path / modem-RIL problem best
+solved alongside the modem/RIL/WiFi bring-up, not in isolation; and the device isn't a daily driver
+until the kernel + WiFi land anyway.
+
+**When to revisit:** **HIGH PRIORITY — immediately after** the source kernel is built (OEM Kleaf, see
+`KLEAF_PIVOT.md`) and WiFi is fixed (byte-reversed WLAN MAC; agent memory
+`project_jun03_wifi_softsku_rootcause`). At that point the device is a daily-driver candidate and
+cellular-over-eSIM is the gating feature. Artifacts on host: `~/android/esim_diag.txt` +
+`esim_diag2.txt` (LUI summaries with the BPP + 6A88), `esim_retry_logcat.txt` (full `-b all` incl.
+radio trace). Full detail in agent memory `project_jun07_esim_menu_rootcause`.
