@@ -163,15 +163,26 @@ one branch: CPH2745/CPH2747 = India/Export, **CPH2749 = our export/NA device**, 
 (= `$(BUILD_TOP)/../kernel-6.12`, the sibling location kernel.mk expects with `TARGET_KERNEL_VERSION:=6.12`):
 ```
 repo init -u https://github.com/OnePlusOSS/kernel_manifest -b oneplus/sm8850 -m oneplus_15.xml
-repo sync -c -j6 --no-tags --no-clone-bundle
+repo sync -c -j4 --no-tags --no-clone-bundle --retry-fetches=3 --depth=1
 ```
-- Manifest pins the 3 OnePlus repos to the MOVING branch (HEAD = 16.0.7.201, Jun 3) → after sync,
-  `git checkout` the bracketing snapshot in each: common → `kernel_platform/common`, msm →
-  `kernel_platform/soc-repo`, superproject → repo root (`./`).
-- TOOLCHAIN VENDORED (offline build confirmed): clang **r536225 / 19.0.1** (exact match to
-  deployed) at `kernel_platform/prebuilts/clang/host/linux-x86/clang-r536225`; bazel 8.0.0 at
-  `kernel_platform/prebuilts/kernel-build-tools/bazel/linux-x86_64/bazel`. `network.bazelrc`
-  defaults `--config=no_internet`. No submodules, no LFS — plain checkouts. ~10-15 GB.
+**⚠ 2026-06-07 SYNC STATUS — clang is the ONE missing piece; resume with `--depth=1`.**
+Everything is synced EXCEPT the host clang toolchain. Present + intact (19G total after cleanup):
+OnePlus source (`kernel_platform/common @ d9053b907`, `soc-repo`, build, oplus, qcom, common-modules)
+and most prebuilts — `kernel_platform/prebuilts` (4.2G) has build-tools, clang-tools, gcc, jdk,
+kernel-build-tools (incl. **bazel 8.0.0**), ndk-r26. **MISSING:**
+`kernel_platform/prebuilts/clang/host/linux-x86/clang-r536225` (clo-la project has 0 finalized packs).
+That clang prebuilt is a single **>10 GB git fetch that is NOT resumable** — the flaky link + laptop
+sleep drive-unmounts (agent memory [[reference_drive_sleep_and_pkill_gotchas]]) killed it repeatedly,
+each retry restarting from 0 and piling up ~10 GB dead `tmp_pack_*` partials (cleaned — freed ~59 GB).
+**RESUME (on AC + sleep-inhibited):** `cd <BUILD_TOP>/../kernel-6.12 && find .repo -name '*.lock' -delete
+&& PATH=$HOME/.local/bin:$PATH repo sync -c -j4 --no-tags --no-clone-bundle --retry-fetches=3 --depth=1`.
+The **`--depth=1`** shrinks clang to ~3–5 GB (toolchain FILES only, no git history — fine for the bazel
+build) so it can actually finish on this link; if a pinned-SHA project rejects shallow, full-fetch just
+that one on a wired connection.
+- Manifest pins the 3 OnePlus repos to the MOVING branch → after sync `git checkout` the bracketing
+  snapshot in each: common → `kernel_platform/common`, msm → `kernel_platform/soc-repo`, superproj → `./`.
+- `network.bazelrc` defaults `--config=no_internet`; build via
+  `./kernel_platform/oplus/build/oplus_build_kernel.sh canoe perf`. Verify clang-r536225 present first.
 - OEM build helper: `./kernel_platform/oplus/build/oplus_build_kernel.sh canoe perf` (wraps
   `tools/bazel run //…:canoe_perf_dist`). NOTE: the msm-kernel maps to `kernel_platform/soc-repo`,
   so the bazel package label may be `//soc-repo:canoe_perf_dist` (and `TARGET_KERNEL_SOURCE` the
