@@ -1521,7 +1521,9 @@ Opus-Web session); (2) a wiring generator (parse `build.config.msm.<plat>` + `ta
 → BoardConfig block + `device.bazelrc` + manifest); (3) a snapshot pinner (deployed kernel
 SHA/build-date/OOS tag → OEM "Synchronize code for…" snapshot commit); (4) a defconfig-fragment
 shim (LOS data → Starlark `pre/post_defconfig_fragments`). Full notes in `KLEAF_PIVOT.md`
-§generalization. Defer until the canoe Kleaf build is proven end-to-end.
+§generalization. **BASE PROVEN 2026-06-08** — `canoe perf` builds RC=0 from the OEM Kleaf drop (see
+`KLEAF_PIVOT.md` §"STEP (c) RESULT"), so this generalization can now be built against a known-good
+reference. Still deferred (it's tooling, not blocking the canoe bring-up).
 
 ---
 

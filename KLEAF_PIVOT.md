@@ -204,3 +204,32 @@ clang **1.9GB**, rust **1.2GB**, trusty ~0. NEXT = step (c) build `canoe_perf_di
 **Provenance of this section:** two research sub-agents (kernel.mk Kleaf path + OnePlusOSS drop;
 then snapshot/manifest pin) cross-checked against live OnePlusOSS/`gh` + CLO-LA GitLab, plus the
 device `/proc/version`. Sync kicked 2026-06-06.
+
+## STEP (c) RESULT — `canoe perf` BUILD SUCCEEDED (2026-06-08)
+
+Ran from `<…>/kernel-6.12`: **`unset -f grep`** first (the dev shell aliases grep→ugrep, which breaks
+the build the same way it broke `lunch` — see [[reference_grep_ugrep_breaks_lunch]]) + sleep-inhibit,
+then `./kernel_platform/oplus/build/oplus_build_kernel.sh canoe perf` (offline; wraps
+`prepare_vendor.sh canoe perf` → `tools/bazel run`). **RC=0 in 17m20s.** Artifacts in
+`kernel_platform/out/msm-kernel-canoe-perf/dist/`:
+- **Image** 39.9MB (`Linux kernel ARM64 boot executable Image, little-endian, 4K pages`),
+  **vmlinux** 376MB, **System.map**, **boot.img** (+ boot-gz / boot-lz4).
+- **449 `.ko`** modules (incl. `cfg80211.ko`, `mac80211.ko`).
+- canoe DTBs (`canoe`/`canoep`/`-tp`/`-v2`…) + the packed `infiniti-…-dtbo.img` (overlays for
+  peach-cnss / wcn786x-bt / display / camera / audio variants).
+- **clang-r536225 confirmed in use** (build warns `CLANG_PREBUILT_BIN … clang-r536225/bin`).
+
+Benign warnings only: `gki vmlinux files is not found`, `CLANG_PREBUILT_BIN should not be set`, and a
+non-fatal `FileNotFoundError: …/prebuilts/asuite` (a build-metadata git step; asuite wasn't fetched and
+isn't needed — did NOT abort). **This validates the whole pivot: the OEM's exact kernel builds from
+source, offline, with the matching clang — dissolving the KMI-skew premise that blocked the old Kbuild
+route.**
+
+**REMAINING (toward a WiFi-fixed source-kernel boot):**
+- **(e) cnss2 byte-reversed-MAC patch** — `cnss2.ko` is NOT in the core `dist/` (cfg80211/mac80211
+  are, but the WLAN/cnss driver is a separate vendor module set / bazel target). Step e: locate that
+  module build, patch `cnss2/qmi.c` to de-reverse the DMS WLAN MAC ([[project_jun03_wifi_softsku_rootcause]]),
+  rebuild it.
+- **(d) wire the device**: `USE_PREBUILT_KERNEL=false`, `TARGET_KERNEL_PLATFORM_TARGET=canoe_perf`,
+  source path, `TARGET_KERNEL_VERSION=6.12` (BoardConfig — these live in the !USE_PREBUILT_KERNEL branch).
+- **(f)** build the ROM against it, flash, verify `wlan0`.
