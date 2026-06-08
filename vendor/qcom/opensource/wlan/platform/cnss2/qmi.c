@@ -1625,10 +1625,6 @@ int cnss_wlfw_wlan_mac_req_send_sync(struct cnss_plat_data *plat_priv,
 	struct wlfw_mac_addr_resp_msg_v01 resp = {0};
 	struct qmi_txn txn;
 	int ret;
-#ifdef OPLUS_FEATURE_WIFI_MAC
-        int i;
-        char revert_mac[QMI_WLFW_MAC_ADDR_SIZE_V01];
-#endif /* OPLUS_FEATURE_WIFI_MAC */
 
 	if (!plat_priv || !mac || mac_len != QMI_WLFW_MAC_ADDR_SIZE_V01)
 		return -EINVAL;
@@ -1644,17 +1640,11 @@ int cnss_wlfw_wlan_mac_req_send_sync(struct cnss_plat_data *plat_priv,
 
 		cnss_pr_dbg("Sending WLAN mac req [%pM], state: 0x%lx\n",
 			    mac, plat_priv->driver_state);
-#ifdef OPLUS_FEATURE_WIFI_MAC
-        for (i = 0; i < QMI_WLFW_MAC_ADDR_SIZE_V01 ; i ++){
-            revert_mac[i] = mac[QMI_WLFW_MAC_ADDR_SIZE_V01 - i -1];
-        }
-	cnss_pr_dbg("Sending revert WLAN mac req [%pM], state: 0x%lx\n",
-                            revert_mac, plat_priv->driver_state);
-        memcpy(req.mac_addr, revert_mac, mac_len);
-#else
-        memcpy(req.mac_addr, mac, mac_len);
-#endif /* OPLUS_FEATURE_WIFI_MAC */
-        req.mac_addr_valid = 1;
+	/* dms.mac is stored in correct byte order (de-reversed in
+	 * cnss_qmi_get_dms_mac), so forward it to FW unchanged — firmware receives
+	 * the same bytes it did before the de-reverse fix. */
+	memcpy(req.mac_addr, mac, mac_len);
+	req.mac_addr_valid = 1;
 
 	ret = qmi_send_request(&plat_priv->qmi_wlfw, NULL, &txn,
 			       QMI_WLFW_MAC_ADDR_REQ_V01,
@@ -4147,7 +4137,24 @@ int cnss_qmi_get_dms_mac(struct cnss_plat_data *plat_priv)
 		goto out;
 	}
 	plat_priv->dms.mac_valid = true;
+#ifdef OPLUS_FEATURE_WIFI_MAC
+	/* OnePlus DMS delivers the WLAN MAC byte-reversed (e.g. c3:bb:04:bc:ed:78
+	 * for the true MAC 78:ed:bc:04:bb:c3 = BT+1). Stored as-received its first
+	 * octet can carry the multicast bit, which qcacld's
+	 * __wlan_hdd_validate_mac_address rejects -> host-driver probe fails (-1).
+	 * De-reverse here so dms.mac holds the true MAC for EVERY consumer. The FW
+	 * path (cnss_wlfw_wlan_mac_req_send_sync) no longer re-reverses, so firmware
+	 * still receives the identical bytes it did before this change. */
+	{
+		int _i;
+
+		for (_i = 0; _i < QMI_WLFW_MAC_ADDR_SIZE_V01; _i++)
+			plat_priv->dms.mac[_i] =
+				resp.mac_address[QMI_WLFW_MAC_ADDR_SIZE_V01 - _i - 1];
+	}
+#else
 	memcpy(plat_priv->dms.mac, resp.mac_address, QMI_WLFW_MAC_ADDR_SIZE_V01);
+#endif /* OPLUS_FEATURE_WIFI_MAC */
 	cnss_pr_info("Received DMS MAC: [%pM]\n", plat_priv->dms.mac);
 
 	return 0;
