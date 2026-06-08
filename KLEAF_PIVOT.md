@@ -232,4 +232,6 @@ route.**
   rebuild it.
 - **(d) wire the device**: `USE_PREBUILT_KERNEL=false`, `TARGET_KERNEL_PLATFORM_TARGET=canoe_perf`,
   source path, `TARGET_KERNEL_VERSION=6.12` (BoardConfig — these live in the !USE_PREBUILT_KERNEL branch).
+  **DETAILED ADAPTER PLAN: `KLEAF_WIREUP_PLAN.md`** (decided 2026-06-08: OEM-wrapper build driver +
+  WLAN-as-Kleaf-DDK; designed as reusable LOS↔Kleaf tooling, canoe = consumer #1).
 - **(f)** build the ROM against it, flash, verify `wlan0`.

@@ -1523,7 +1523,10 @@ SHA/build-date/OOS tag → OEM "Synchronize code for…" snapshot commit); (4) a
 shim (LOS data → Starlark `pre/post_defconfig_fragments`). Full notes in `KLEAF_PIVOT.md`
 §generalization. **BASE PROVEN 2026-06-08** — `canoe perf` builds RC=0 from the OEM Kleaf drop (see
 `KLEAF_PIVOT.md` §"STEP (c) RESULT"), so this generalization can now be built against a known-good
-reference. Still deferred (it's tooling, not blocking the canoe bring-up).
+reference. Still deferred (it's tooling, not blocking the canoe bring-up). The concrete adapter design
+this generalization derives from — OEM-wrapper build driver + WLAN-as-Kleaf-DDK, with the per-device
+surface reduced to ~8 BoardConfig vars — is fully specified in `KLEAF_WIREUP_PLAN.md` (the canoe
+instance validates the tooling).
 
 ---
 
