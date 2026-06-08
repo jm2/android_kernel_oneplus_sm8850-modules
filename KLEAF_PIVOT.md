@@ -183,6 +183,19 @@ that one on a wired connection.
   snapshot in each: common → `kernel_platform/common`, msm → `kernel_platform/soc-repo`, superproj → `./`.
 - `network.bazelrc` defaults `--config=no_internet`; build via
   `./kernel_platform/oplus/build/oplus_build_kernel.sh canoe perf`. Verify clang-r536225 present first.
+
+**✅ 2026-06-08 — SYNC COMPLETE; tree build-ready (33G).** clang-r536225 (verified
+`clang --version` = Android clang 19.0.1 r536225, exact match to deployed) + clang-r547379, rust
+(@6ff98fe), trusty (@3408234), bazel 8.0.0, gcc/jdk/ndk/build-tools, common @ d9053b907, soc-repo —
+all present. **CORRECTION to the recipe above: `--depth=1` via repo does NOT work for these
+codelinaro SHA-pinned prebuilts** — `repo sync` has no `--depth`, and `repo init --depth=1` set
+repo.depth=1 but repo still fetched them non-shallow (3 failed attempts, ~13GB wasted). **The shallow
+method that WORKS is RAW git, per project:** delete the repo gitdir + worktree, then in the (empty)
+worktree run
+`git init && git remote add clo-la https://git.codelinaro.org/clo/la/<project-name> &&
+git fetch --depth=1 clo-la <pinned-SHA-from-manifest> && git checkout <SHA>`
+(GitLab allows reachable-SHA-in-want → pulls only the pinned commit's tree). Exact wire cost:
+clang **1.9GB**, rust **1.2GB**, trusty ~0. NEXT = step (c) build `canoe_perf_dist` offline.
 - OEM build helper: `./kernel_platform/oplus/build/oplus_build_kernel.sh canoe perf` (wraps
   `tools/bazel run //…:canoe_perf_dist`). NOTE: the msm-kernel maps to `kernel_platform/soc-repo`,
   so the bazel package label may be `//soc-repo:canoe_perf_dist` (and `TARGET_KERNEL_SOURCE` the
