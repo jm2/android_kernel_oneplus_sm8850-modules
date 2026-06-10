@@ -1576,3 +1576,37 @@ until the kernel + WiFi land anyway.
 cellular-over-eSIM is the gating feature. Artifacts on host: `~/android/esim_diag.txt` +
 `esim_diag2.txt` (LUI summaries with the BPP + 6A88), `esim_retry_logcat.txt` (full `-b all` incl.
 radio trace). Full detail in agent memory `project_jun07_esim_menu_rootcause`.
+
+---
+
+## Fork + commit the OEM WLAN modules repo to jm2 (cnss2 byte-reversed-MAC fix)
+
+**Surfaced:** 2026-06-09 (Kleaf step-d implementation — Part C WLAN-DDK).
+
+**Context:** The OEM Kleaf build compiles WLAN from the OEM tree at
+`kernel-6.12/vendor/qcom/opensource/wlan/{platform,qcacld-3.0}` (NOT from the LineageOS
+`sm8850-modules` tree — that's the parked Kbuild source). The WiFi fix (byte-reversed WLAN
+MAC, in `platform/cnss2/qmi.c`, guarded by `OPLUS_FEATURE_WIFI_MAC`) was applied to the
+**local** OEM tree to make the source-built `cnss2.ko` carry the fix (validated: builds against
+`//soc-repo:canoe_perf_base_kernel`, vermagic matches, fix compiles). That patch is byte-identical
+to the jm2 `sm8850-modules` copy at commit `21fae367` — but it currently lives ONLY in the local
+synced OEM checkout, version-controlled nowhere. The OEM WLAN source belongs to the OnePlusOSS
+`android_kernel_modules_and_devicetree_oneplus_sm8850` repo (branch
+`oneplus/sm8850_b_16.0.0_oneplus_15`), synced read-only.
+
+**Concrete tasks:**
+1. Fork `OnePlus-SM8850-Development`/`android_kernel_modules_and_devicetree_oneplus_sm8850` (or the
+   OnePlusOSS source) to `jm2`, push over SSH (`reference_jm2_forks_use_ssh`).
+2. Point the OEM tree's `vendor/qcom/opensource/wlan` at the jm2 fork (local_manifest or remote swap),
+   or just commit + push the single `cnss2/qmi.c` patch on the fork.
+3. Commit the de-reverse fix (mirror jm2 `sm8850-modules` 21fae367; record the cross-link in
+   `KLEAF_PIVOT.md`). Confirm a clean WLAN rebuild from the fork still yields matching vermagic.
+
+**Rationale for deferring:** the fix is applied + validated locally; the source-built ROM (Part E)
+can be produced and flashed from the current local state. Forking a large OEM repo + reworking the
+manifest is reproducibility/hygiene work, best done once Part E confirms the fix works on hardware
+(no point forking around a fix that hasn't booted yet).
+
+**When to revisit:** right after Part E hardware verification confirms `wlan0` comes up with a
+unicast MAC. Until then the local patch suffices for building. See
+`KLEAF_WIREUP_PLAN.md` §"IMPLEMENTATION RESULTS — 2026-06-09".

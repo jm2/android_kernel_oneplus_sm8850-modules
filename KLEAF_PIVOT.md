@@ -235,3 +235,19 @@ route.**
   **DETAILED ADAPTER PLAN: `KLEAF_WIREUP_PLAN.md`** (decided 2026-06-08: OEM-wrapper build driver +
   WLAN-as-Kleaf-DDK; designed as reusable LOS↔Kleaf tooling, canoe = consumer #1).
 - **(f)** build the ROM against it, flash, verify `wlan0`.
+
+**UPDATE 2026-06-09 — steps (d)+(e) IMPLEMENTED + validated; only (f) remains (hardware).** Full record:
+`KLEAF_WIREUP_PLAN.md` §"IMPLEMENTATION RESULTS — 2026-06-09". In brief:
+- (d) jm2 `vendor/lineage` `kernel.mk` got an OEM-wrapper adapter branch + a `TARGET_KERNEL_PLATFORM_ROOT`-aware
+  existence guard; jm2 `device/sm8850-common` `BoardConfigCommon.mk` !USE_PREBUILT_KERNEL branch now sets the
+  Kleaf adapter vars and sources module-load lists from the OEM dist. `m nothing` (USE_PREBUILT_KERNEL=false)
+  parses clean → routing validated.
+- (e) the WLAN/cnss2 fix did NOT need hand-DDK authoring: the OEM tree ALREADY ships WLAN bazel DDK targets
+  (`//vendor/qcom/opensource/wlan/platform:canoe_perf_cnss2` etc. + `qcacld-3.0:canoe_perf_all_modules_dist`)
+  attached to `//soc-repo:canoe_perf_base_kernel`, with `OPLUS_FEATURE_WIFI_MAC` defined. Patched the OEM tree's
+  `cnss2/qmi.c` (== 21fae367) → built `cnss2.ko` with **vermagic matching the kernel** (`gd9053b907db4`), proving
+  KMI match. New device wrapper `device/sm8850-common/kernel-build/build-canoe-kleaf.sh` runs the OEM kernel build
+  + builds/strips/merges the WLAN modules into the dist (validated end-to-end: 10 WLAN .ko merged,
+  vendor_dlkm.modules.load=324, cnss2 vermagic matches).
+- All edits LOCAL/uncommitted (user to decide commit). cnss2 patch lives only in the local OEM tree → fork
+  follow-up logged in DEFERRED_FOLLOWUPS.md.
