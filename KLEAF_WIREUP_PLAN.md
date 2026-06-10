@@ -382,3 +382,35 @@ green on attempt 5. The four in-brunch failures and fixes (e1→e5), all committ
 vendor_dlkm staging = 564 modules with `cnss2.ko` (byte-reversed-MAC WiFi fix) vermagic-matched;
 fresh `super.img` 5.0G assembled from the new target-files. REMAINING: flash boot + vendor_boot +
 dtbo + super via bootloader fastboot (NOT fastbootd) and verify wlan0 comes up with a unicast MAC.
+
+## FLASH RESULTS + DT ROOT CAUSE — 2026-06-10
+
+**e5 flash = black screen "hard freeze", recovery invisible.** A 4-analyst differential workflow
+(every partition: ours vs stock dump vs community ROM vs OEM dist; artifacts in
+`/run/media/jmulesa/lineage/android/tmp_bootdiff/`, report `~/android/bootchain_diff_report.md`)
+EXONERATED boot.img packaging (byte-equivalent to the booting community image; only the kernel
+binary differs), AVB (orange downgrades all partitions uniformly; only INVALID_METADATA aborts),
+init_boot (file-list identical to community), vendor_boot header/cmdline/bootconfig (cmdline empty
+exactly like the booting community image; built-in CONFIG_CMDLINE has console=ttynull).
+**ROOT CAUSE: the OEM OSS DT is a bring-up subset.** Our dtbo overlays (OSS dist passthrough,
+230KB vs stock 816KB-1.46MB) have essentially NO display stack (4 vs 7551 `mdss` refs, 4 vs 1933
+`dsi_`, 25 vs 1605 `panel`), no WLAN-cnss and no audio nodes; our base DTBs are 592 nodes poorer
+(camera pinctrl, kgsl, ipclite, mdss/dsi children). Merged DT is structurally valid (libufdt
+applies cleanly → ABL doesn't hang) but the panel can never initialize → black screen + invisible
+recovery, indistinguishable from a freeze. The `-mtp-` suspicion was a red herring (stock overlays
+are also "Canoe MTP"); the missing-alor-base concern was downgraded (stock dtbo only matches canoe
+bases → the device selects canoe).
+**FIX (committed: vendor/lineage `c00bdaf3`, sm8850-common `d020404`): pair the source kernel with
+the STOCK DT artifacts** — `BOARD_PREBUILT_DTBIMAGE_DIR` (stock 14-DTB `infiniti.dtb` blob) +
+`BOARD_PREBUILT_DTBOIMAGE` (stock dtbo.img), exactly the booting community recipe; DT is
+configuration data, not KMI-coupled code. MATCHED-PAIR WARNING: stock overlays FAIL libufdt fixups
+against the OSS base (`audio_gpr` symbol absent) — never mix stock dtbo with the OSS dtb blob.
+**e6 rebuilt + verified** (vendor_boot dtb sha == stock blob `308b507f…`, dtbo content-identical,
+kernel still source) **+ flashed with full chain incl. vbmeta + `fastboot -w` wipe. Status: kernel
+now RUNS (USB enumerates ~10s, modern adbd with vendor-identity banner CPH2747) but screen black
+and ALL adbd services return "closed"; sideload also closed.** Working theory: the e5 bootloop
+attempts exhausted the A/B slot retry counter → ABL forces RECOVERY (whose adb is off by default =
+service-less adbd) — a plain `fastboot flash` does NOT reset the counter. NEXT CYCLE:
+`fastboot --set-active=a` (resets retries) → reboot → observe; if panic, our kernel has
+CONFIG_PSTORE_RAM+PSTORE_CONSOLE=y and the stock DT carries a ramoops node → console log readable
+in `/sys/fs/pstore` on the next shell.
