@@ -355,3 +355,30 @@ sm8850-common `2b30f74`; final run: all five gates 0-missing, vermagic all-644-m
    path (runtime loader ignores it on this device — upstream Kleaf-path behavior, not ours); the
    8 never-stock-loaded oplus targets that fail to compile; coverage is name-based but staleness is
    now covered by the vermagic gate.
+
+## PART E BUILD RESULTS — 2026-06-10 (first end-to-end source-mode brunch: SUCCESS)
+
+`iter_brunch.sh <tag> "" source` (new 3rd arg → `USE_PREBUILT_KERNEL=false`; keeps
+`BOARD_PREBUILT_KERNEL=true` whose only consumers are the parked Kbuild Android.mk guards) went
+green on attempt 5. The four in-brunch failures and fixes (e1→e5), all committed:
+1. **e1: brunch env flipped prepare_vendor.sh into Android-integration mode** (ANDROID_BUILD_TOP →
+   re-rooted out dirs, device/qcom writes into the ROM tree, abl/edk2 attempt → hard error) — wrapper
+   now sanitizes the Android/lunch env + pins PATH (sm8850-common `c5588da`).
+2. **e1: parked Kbuild Android.mk rules** (graphics/synx/mmrm) injected bogus
+   BOARD_VENDOR_KERNEL_MODULES entries → `llvm-strip init.environ.rc` failure — keep
+   `BOARD_PREBUILT_KERNEL=true` in source mode.
+3. **e2/e3/e4: soong `generated_kernel_includes`** assumed the stock platform layout (bare bazel from
+   `kernel/platform/kernel-<ver>`). Added a wrapper-mode branch consuming the dist's
+   `kernel-uapi-headers.tar.gz` (export `TARGET_KERNEL_PLATFORM_{ROOT,DIST}` to `lineageVarsPlugin`;
+   `mkdir -p` the gen dir; `gzip -d` + `tar -xf` because `tar -xzf` spawns `zcat`, blocked by the
+   hermetic PATH) — vendor/lineage `59cf4834`.
+4. **e2: first-stage depmod -ae failure**: stock stages `camera_extension.ko` in the ramdisk while its
+   provider (`camera.ko`) is vendor_dlkm-only — stock never runs a strict depmod; the lineage macro
+   does. Fixed by passing `KERNEL_OUT` as the depmod-layer **bridge** (arg 9) on the platform-path
+   BOOT/RECOVERY staging calls: the resolver sees the full 644-module corpus, the shipped set stays
+   stock-shaped (vendor/lineage `59cf4834`).
+**ARTIFACT VERIFICATION (e5):** `boot.img` kernel = `6.12.23-android16-5-o-gd9053b907db4-4k
+(kleaf@build-host)` clang 19.0.1 r536225 (the SOURCE kernel; prebuilt was geb065695cf38);
+vendor_dlkm staging = 564 modules with `cnss2.ko` (byte-reversed-MAC WiFi fix) vermagic-matched;
+fresh `super.img` 5.0G assembled from the new target-files. REMAINING: flash boot + vendor_boot +
+dtbo + super via bootloader fastboot (NOT fastbootd) and verify wlan0 comes up with a unicast MAC.
