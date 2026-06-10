@@ -321,3 +321,37 @@ modules as fully source-built as possible" — user goal). Findings + final stat
   idempotent re-runs. Every shipped module is source-built against the same canoe_perf kernel_build
   (KMI/vermagic-matched by construction); the ONLY non-source content is the 21 documented extras,
   which simply don't ship.
+
+## ADVERSARIAL REVIEW + HARDENING — 2026-06-09/10
+
+A multi-agent adversarial review (llvm-nm/ckati-verified findings) of the wireup found 4 brunch/boot
+blockers beyond the first implementation; all fixed + re-validated (vendor/lineage `88663f8e`,
+sm8850-common `2b30f74`; final run: all five gates 0-missing, vermagic all-644-match, exit 0):
+1. **First-stage understaging:** staging only the recovery LOAD LIST dropped 15 dependency-only
+   modules stock stages by DIRECTORY (verified: msm_drm has 14 strong undefined hdcp_* symbols
+   exported only by hdcp_qseecom_dlkm → depmod -ae build failure + no display at boot). Fix:
+   `BOOT_KERNEL_MODULES := $(sort $(notdir $(wildcard …/vendor_ramdisk/*.ko)))` (prebuilt
+   semantics) + the kernel.mk ALLOW_MISSING staging filter (patch 6) + a staged-dir coverage gate.
+2. **zram/zsmalloc dual-copy collision:** stock ships GKI copies (system_dlkm) AND oplus-patched
+   copies (vendor_dlkm) of the same names; the flat dist holds the vendor ones → GKI-only
+   system_dlkm depmod fails on the oplus symbols AND the comm split silently drops zram from
+   vendor_dlkm. Fix: wrapper drops colliding names from system_dlkm.modules.load (vendor copy
+   ships/loads via the stock vendor list — what the OEM device actually uses).
+3. **dtbo never produced on the source path** (BOARD_PREBUILT_DTBOIMAGE was prebuilt-include-only →
+   no dtbo.img target, broken --recovery_dtbo, unsatisfiable AVB chain). Fix: kernel.mk "dist dtbo
+   passthrough" rule publishes the dist's OEM-packed dtbo.img (all 8 variant overlays) at
+   BOARD_PREBUILT_DTBOIMAGE; the BoardConfig assignment MUST be deferred `=` — an immediate `:=`
+   captures empty TARGET_OUT_INTERMEDIATES → absolute `/KERNEL_OBJ/...` → **soong glob-walk panic**
+   (`filepath.Rel(TOP, /)`).
+4. **OEM build failures undetectable** (their scripts tee with no pipefail; cached rebuilds rewrite
+   NO dist files so mtime freshness is meaningless). Fix: parse bazel's failure sentence from the
+   LOGDIR log + artifact existence + a **vermagic gate** over every shipped .ko against the GKI
+   archive's release (the authoritative kernel-release source — kbuild's kernel.release only exists
+   inside bazel sandboxes).
+   Plus: per-target staging subdirs + sha256 cross-target collision gate; merge manifest (stale .ko
+   removed each run); KOPTS hard checks; stock-list absence fails the hard gates; KERNEL_OUT
+   consumed-namespace cleanup in the adapter; guard re-keyed on BUILD_WRAPPER.
+   Known-accepted (documented, non-blocking): system_dlkm image ships no modules.load on the Kleaf
+   path (runtime loader ignores it on this device — upstream Kleaf-path behavior, not ours); the
+   8 never-stock-loaded oplus targets that fail to compile; coverage is name-based but staleness is
+   now covered by the vermagic gate.
