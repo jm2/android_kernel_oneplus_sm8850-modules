@@ -1533,49 +1533,79 @@ instance validates the tooling).
 ## eSIM provisioning fails at ES10b.LoadBoundProfilePackage (eUICC SW=6A88)
 
 **Surfaced:** 2026-06-07 (OpenEUICC LPA bring-up; two attempts with a standard data-only **Google Fi**
-eSIM, byte-identical failure).
+eSIM, byte-identical failure). **REWRITTEN 2026-06-09 after a full multi-agent investigation** —
+several of the Jun-07 working theories were disproven; do not trust earlier copies of this entry.
 
-**Context:** OpenEUICC is deployed and working as the device LPA (see
-`device/oneplus/sm8850-common/README.md` "eSIM LPA") — the SIM/eSIM menu, LPA binding, eUICC reads,
-and the entire network download phase all succeed. SM-DP+ `gtm.pr.go-esim.com` returns
-`functionExecutionStatus: Executed-Success` + the full `boundProfilePackage` (over the gnirehtet USB
-reverse-tether). It then fails at the **final on-chip write**, `ES10b.LoadBoundProfilePackage`:
-`ProfileDownloadException(lpaErrorReason=ES10B_ERROR_REASON_UNDEFINED)`, last APDU **SW=6A88**
-("referenced data not found"). eUICC rolls back clean (`mProfiles=[]`; no stuck ISD-P). Deterministic
-across both attempts → NOT transient and NOT an exotic profile (data-only Fi = standard SGP.22).
-KEY FINDING — **OMAPI/SecureElement access to the eUICC is non-functional on this port.** OpenEUICC
-logs `OMAPI APDU interface unavailable` for every ISD-R AID on physical slot 0, then "channel
-invalid... slot might be broken," and falls back to the **modem RIL path**
-(`RILJ: SIM_TRANSMIT_APDU_CHANNEL [PHONE1]`; eUICC found on slot 1 port 0). READS over RIL work
-(GetEID, GetProfilesInfo); the large BPP **WRITE** does not. RILJ redacts APDU payload+SW (even on
-userdebug) so the exact failing STORE DATA segment isn't visible (~60 APDUs over ~31s → fail). The
-SecureElement HALs ARE registered (`ISecureElement/SIM1,SIM2,eSE1` + OMAPI
-`ISecureElementService/default`), so the gap is reader→eUICC mapping / ARA-M access, not a missing HAL.
+**Corrected failure narrative (2026-06-09):** Both attempts completed the entire network phase
+(ES9+ initiateAuthentication → authenticateClient → getBoundProfilePackage, all HTTP 200, full
+8166-byte BPP delivered) AND all on-chip ES10b steps through PrepareDownload (41 APDUs, all
+success). The LoadBoundProfilePackage phase then issued exactly **two APDUs** and died: at
+OpenEUICC's es10x MSS default of 63, BPP slice 1 (BF36 header + complete InitialiseSecureChannel,
+191 B) is a 4-block STORE DATA chain; block P2=00 was **accepted by the card** (170 ms — longest
+round-trip of the session), and the 2nd APDU drew bare **SW=6A88**. NOT a "~60-APDU large write"
+failure — that figure was the whole session. Per SGP.22 (§5.7.6, §3.1.5, §5.7.2) a bare 6A88 here
+is **transport/stream-level** ("no RSP session" / "TLV not expected next"); all compliant
+content/crypto rejections (bad signature, txid, remoteOpId, keyset) must return an ErrorResult TLV
+with SW **9000**, which lpac would map to a specific reason — `reason 255` means bare SW, no TLV.
+Clean rollback is explained by OpenEUICC explicitly calling cancelSessions after failures
+(`LocalProfileAssistantImpl.kt:239-242`), proving nothing about the card.
 
-**Concrete tasks:**
+**The app stack is exonerated by direct execution:** the deployed lpac (submodule d214738, zero
+local patches) was compiled into a host harness and fed the REAL failing BPP at mss=63 and 120 —
+output byte-identical to an independently computed SGP.22 §2.5.5 reference segmentation. Reference
+artifacts (expected APDU streams, BPP binary, harness): **`~/android/esim_6a88_reference/`**.
 
-1. **Fix the OMAPI/SecureElement path to the eUICC (likely the real fix).** Identify which reader
-   (SIM1/SIM2/eSE1) backs the embedded eUICC and why OpenEUICC can't open a valid ISD-R logical
-   channel over OMAPI (ARA-M access rules / SE-HAL reader config / refresh tag). If OMAPI reaches the
-   eUICC, OpenEUICC uses the SE path — the one designed for profile writes — and the BPP install
-   should complete instead of going through the RIL path.
-2. Rebuild OpenEUICC with lpac APDU debug (libeuicc debug / instrument the Kotlin AndroidApduChannel)
-   to capture the exact failing STORE DATA segment + the chip's full response — distinguishes a
-   segment size/format issue (possible lpac-side chunking workaround) from a hard write limitation.
-3. If it is RIL-path-only: investigate the OEM RIL `SIM_TRANSMIT_APDU_CHANNEL` handling of large
-   ISD-R writes / extended-length APDUs (modem/RIL-level).
+**DISPROVEN (do not re-litigate):** (H1-as-stated) generic `procedure_bytes=SKIP` chain re-framing —
+byte-structurally identical chains (AuthenticateServer 15 APDUs, PrepareDownload 13) succeeded
+seconds earlier under the same SKIP; (H2) modem/Oplus LPA BPP policing; (H3) `isEs10=false`
+asymmetry (constant across success+failure; MEP=NONE makes it vacuous); (H4) RSP session loss in
+the HTTP gap (the failing gap was the SHORTEST of three; longer ones survived twice); (H5) lpac
+chunking bug (refuted by direct execution); (H6) card content/state/orange-state rejection (the
+card accepted the block containing txid/remoteOpId/CRT; spec requires TLV+9000 for those).
+**ALSO DISPROVEN — the Jun-07 "OMAPI is broken" diagnosis:** OMAPI was never attempted against the
+eUICC. The "OMAPI APDU interface unavailable" lines were OpenEUICC's removable-eSIM scan of the
+EMPTY pSIM slot 0 (CARDSTATE_ABSENT, eSTK.me vendor AIDs). The privileged flavor routes embedded
+eUICCs straight to TelephonyManager BY DESIGN (`PrivilegedEuiccChannelFactory.kt:21-27`). The SE
+stack is healthy: QTI SE HAL up, `ISecureElement/SIM2` (the eUICC) mIsConnected=true, OpenEUICC
+holds SECURE_ELEMENT_PRIVILEGED_OPERATION (bypasses ARA/ARF).
 
-**Rationale for deferring:** the LPA bring-up is a real durable win (dead menu → working GMS-free LPA
-wired into `PRODUCT_PACKAGES`). The remaining blocker is an eUICC-access-path / modem-RIL problem best
-solved alongside the modem/RIL/WiFi bring-up, not in isolation; and the device isn't a daily driver
-until the kernel + WiFi land anyway.
+**Surviving hypotheses (ranked):**
+- **S1 (lead):** qcril/modem mishandling of the load-phase chain correlated with
+  `persist.vendor.radio.procedure_bytes=SKIP` (verified set; consumed by `/vendor/lib64/libqcrilNr.so`)
+  — SKIP masking block-1's true response (61xx?) desyncing the card's STORE DATA block counter →
+  "not expected next" → 6A88. The 170 ms block-1 anomaly is the tell.
+- **S2:** other qcril/modem chain mangling (re-segmentation, Lc rewrite, block-counter corruption)
+  below TelephonyManager. Closest public analogue: lpac issue #185 (Xperia 10 IV, Qualcomm SD695,
+  LineageOS + OpenEUICC, same first-segment transport-SW class).
+- **S3 (last resort):** eUICC-OS quirk rejecting a well-formed chain.
 
-**When to revisit:** **HIGH PRIORITY — immediately after** the source kernel is built (OEM Kleaf, see
-`KLEAF_PIVOT.md`) and WiFi is fixed (byte-reversed WLAN MAC; agent memory
-`project_jun03_wifi_softsku_rootcause`). At that point the device is a daily-driver candidate and
-cellular-over-eSIM is the gating feature. Artifacts on host: `~/android/esim_diag.txt` +
-`esim_diag2.txt` (LUI summaries with the BPP + 6A88), `esim_retry_logcat.txt` (full `-b all` incl.
-radio trace). Full detail in agent memory `project_jun07_esim_menu_rootcause`.
+**Concrete tasks (B1 resolves the whole space — ~5 min, NO rebuild needed):**
+1. **B1 — instrumented retry:** OpenEUICC developer options → enable **verbose logging** (full APDU
+   hex+SW per block ships in the deployed binary, `TelephonyManagerApduInterface.kt:56-64`, bypasses
+   RILJ redaction); `adb shell setprop persist.vendor.radio.procedure_bytes RETURN`; capture logcat;
+   retry the same Fi QR once. Success ⇒ S1 confirmed, keep RETURN. Failure ⇒ diff the captured chain
+   vs `~/android/esim_6a88_reference/apdus_mss63.txt` (structure only) — readout: block-1's true SW,
+   whether APDU-2 was P2=01 or GET RESPONSE, which block draws 6A88.
+2. **B2 — if B1 failed:** developer options → es10x **MSS=250** (slice 1 becomes a single
+   un-chained block), retry once. Success ⇒ chain-handling fault below the app (S2). Failure ⇒ S3.
+3. **B3 — restore:** procedure_bytes back to SKIP (unless B1 proved RETURN), verbose off, MSS 63.
+4. **B4 — escalations (only with traces in hand):** (a) one-line `UiccPort.java:258` isEs10→true +
+   frameworks rebuild; (b) optional OMAPI-for-embedded transport in OpenEUICC
+   (`PrivilegedEuiccChannelFactory.kt:27` try OMAPI before TelephonyManager + fix the JNI
+   exception-swallowing at `lpac-jni/interface-wrapper.h:13-17`) — a DIFFERENTIAL (bypasses
+   qcril/framework framing), not a repair of something broken.
+   CAUTION: each retry re-calls ES9+ getBoundProfilePackage and may decrement the SM-DP+ retry
+   counter for this matchingId; Fi support can reissue the QR if exhausted.
+
+**Device constants:** EID 89043051202509096225006453705212; eUICC = slot 1 port 0, ISD-R channel 1
+(standard AID), MEP NONE. Artifacts: `~/android/{esim_diag.txt,esim_diag2.txt,esim_retry_logcat.txt}`
++ `~/android/esim_6a88_reference/`. Key code coords: `PreferenceUtils.kt:90,103`,
+`TelephonyManagerApduInterface.kt:56-64`, `PrivilegedEuiccChannelFactory.kt:21-27`,
+`UiccPort.java:241,258`, `es10b.c:288-398`, `euicc.c:18-110`.
+
+**When to revisit:** **HIGH PRIORITY — B1 is user-runnable NOW** (works on the current prebuilt-kernel
+build; no dependency on the source kernel landing). Full investigation record in agent memory
+`project_jun09_esim_6a88_investigation`.
 
 ---
 
